@@ -1,0 +1,6 @@
+holding_id,ticker,exchange,name,quantity,price,trading_currency,account_id,account_name,account_currency,bucket,asset_class,listing_country,economic_country,sector,industry,theme,cost_basis,is_listed_equity,is_liquid
+h1,INFY,NSE,Infosys Ltd,100,1600,INR,acc-in,India Account,INR,Retirement,Equity,India,India,Technology,IT Services,Digital India,1450,true,true
+h2,AAPL,NASDAQ,Apple Inc,10,220,USD,acc-us,US Brokerage,USD,Strategic Alpha,Equity,United States,United States,Technology,Consumer Electronics,AI Devices,190,true,true
+h3,DBS,SGX,DBS Group,40,35,SGD,acc-sg,Singapore Account,SGD,Education,Equity,Singapore,Singapore,Financials,Banking,ASEAN Finance,30,true,true
+h4,ABC,NSE,ABC India,50,120,INR,acc-in,India Account,INR,Tactical Opportunities,Equity,India,United States,Industrials,Capital Goods,Manufacturing Shift,100,true,true
+h5,ABC,NYSE,ABC Global ADR,30,18,USD,acc-us,US Brokerage,USD,Tactical Opportunities,Equity,United States,India,Industrials,Capital Goods,Manufacturing Shift,15,true,true

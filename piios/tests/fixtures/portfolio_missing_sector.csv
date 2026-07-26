@@ -1,0 +1,2 @@
+holding_id,ticker,exchange,name,quantity,price,trading_currency,account_id,account_name,account_currency,bucket,asset_class,listing_country,economic_country,sector,industry,theme,cost_basis,is_listed_equity,is_liquid
+m1,TSM,NYSE,Taiwan Semi ADR,20,180,USD,acc-us,US Brokerage,USD,Strategic Alpha,Equity,United States,Taiwan,,Semiconductors,AI Compute,150,true,true

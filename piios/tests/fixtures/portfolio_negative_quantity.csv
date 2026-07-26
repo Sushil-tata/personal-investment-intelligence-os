@@ -1,0 +1,2 @@
+holding_id,ticker,exchange,name,quantity,price,trading_currency,account_id,account_name,account_currency,bucket,asset_class,listing_country,economic_country,sector,industry,theme,cost_basis,is_listed_equity,is_liquid
+n1,XYZ,NSE,XYZ Industries,-5,100,INR,acc-in,India Account,INR,Education,Equity,India,India,Industrials,Machinery,Infra Build,85,true,true

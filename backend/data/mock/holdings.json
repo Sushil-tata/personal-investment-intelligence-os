@@ -1,0 +1,18 @@
+[
+  {
+    "holding_id": "h1",
+    "ticker": "VTI",
+    "name": "Vanguard Total Stock Market ETF",
+    "quantity": 15,
+    "value": 4200,
+    "bucket": "Education"
+  },
+  {
+    "holding_id": "h2",
+    "ticker": "NPS",
+    "name": "National Pension System",
+    "quantity": 1,
+    "value": 15000,
+    "bucket": "Retirement"
+  }
+]

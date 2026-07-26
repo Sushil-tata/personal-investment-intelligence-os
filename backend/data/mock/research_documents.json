@@ -1,0 +1,13 @@
+[
+  {
+    "id": "rd1",
+    "title": "AI Infrastructure Buildout",
+    "source": "Research Desk",
+    "timestamp": "2026-06-03T00:00:00Z",
+    "url": "https://example.com/ai-infrastructure",
+    "credibility_score": 81,
+    "extracted_entities": ["NVDA", "AVGO", "Data Center"],
+    "related_ticker_theme": "AI Infrastructure",
+    "content": "Demand for accelerators, power, and networking remains strong."
+  }
+]

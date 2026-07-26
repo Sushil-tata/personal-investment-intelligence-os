@@ -1,0 +1,30 @@
+targets:
+  bucket:
+    Education: 15
+    Retirement: 40
+    Strategic Alpha: 20
+    Tactical Opportunities: 10
+    Safety: 15
+  geography:
+    India: 40
+    US: 40
+    Global: 20
+  currency:
+    INR: 45
+    USD: 45
+    Other: 10
+  asset_class:
+    Equity: 35
+    ETF: 30
+    Debt: 15
+    Retirement Fund: 20
+  sector:
+    Broad Market: 25
+    Technology: 20
+    Financials: 10
+    Diversified: 45
+  theme:
+    Global Core: 30
+    AI Infrastructure: 15
+    Retirement Core: 40
+    Income Stability: 15

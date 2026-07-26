@@ -1,0 +1,6 @@
+weights:
+  accuracy: 0.25
+  evidence_quality: 0.25
+  incentive_alignment: 0.2
+  transparency: 0.15
+  historical_reliability: 0.15

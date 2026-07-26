@@ -1,0 +1,82 @@
+from __future__ import annotations
+
+from enum import Enum
+
+
+class IdentityStatus(str, Enum):
+    ACTIVE = "ACTIVE"
+    INACTIVE = "INACTIVE"
+    RETIRED = "RETIRED"
+
+
+class ListingStatus(str, Enum):
+    ACTIVE = "ACTIVE"
+    SUSPENDED = "SUSPENDED"
+    DELISTED = "DELISTED"
+
+
+class VerificationStatus(str, Enum):
+    UNVERIFIED = "UNVERIFIED"
+    VERIFIED = "VERIFIED"
+    CONFLICTED = "CONFLICTED"
+
+
+class IdentifierType(str, Enum):
+    ISIN = "ISIN"
+    CUSIP = "CUSIP"
+    SEDOL = "SEDOL"
+    FIGI = "FIGI"
+    LEI = "LEI"
+    BLOOMBERG = "BLOOMBERG"
+    REUTERS = "REUTERS"
+    PROVIDER_INTERNAL = "PROVIDER_INTERNAL"
+
+
+class SecurityType(str, Enum):
+    ORDINARY_EQUITY = "ORDINARY_EQUITY"
+    ADR = "ADR"
+    PREFERENCE_SHARE = "PREFERENCE_SHARE"
+    CORPORATE_BOND = "CORPORATE_BOND"
+    CONVERTIBLE = "CONVERTIBLE"
+    ETF_UNIT = "ETF_UNIT"
+    FUND_UNIT = "FUND_UNIT"
+    WARRANT = "WARRANT"
+    OTHER = "OTHER"
+
+
+class RelationshipType(str, Enum):
+    ADR_REPRESENTS = "ADR_REPRESENTS"
+    DUAL_LISTING_OF = "DUAL_LISTING_OF"
+    DEPOSITARY_RECEIPT_OF = "DEPOSITARY_RECEIPT_OF"
+    SUCCESSOR_OF = "SUCCESSOR_OF"
+    PREDECESSOR_OF = "PREDECESSOR_OF"
+    CONVERTIBLE_INTO = "CONVERTIBLE_INTO"
+    SHARE_CLASS_SIBLING = "SHARE_CLASS_SIBLING"
+
+
+class ResolutionStatus(str, Enum):
+    RESOLVED = "RESOLVED"
+    UNRESOLVED = "UNRESOLVED"
+    AMBIGUOUS = "AMBIGUOUS"
+    CONFLICTING = "CONFLICTING"
+    INACTIVE_MATCH = "INACTIVE_MATCH"
+    HISTORICAL_MATCH = "HISTORICAL_MATCH"
+
+
+class RuleStrength(str, Enum):
+    AUTHORITATIVE = "AUTHORITATIVE"
+    STRONG = "STRONG"
+    MEDIUM = "MEDIUM"
+    WEAK = "WEAK"
+
+
+class EntityScope(str, Enum):
+    COMPANY = "COMPANY"
+    SECURITY = "SECURITY"
+    LISTING = "LISTING"
+
+
+class ResolutionIssueStatus(str, Enum):
+    OPEN = "OPEN"
+    REVIEWED = "REVIEWED"
+    RESOLVED = "RESOLVED"

@@ -1,0 +1,14 @@
+[
+  {
+    "watchlist_id": "w1",
+    "ticker": "NVDA",
+    "thesis": "AI compute moat",
+    "bucket": "Strategic Alpha"
+  },
+  {
+    "watchlist_id": "w2",
+    "ticker": "AVGO",
+    "thesis": "Networking and custom silicon",
+    "bucket": "Tactical Opportunities"
+  }
+]

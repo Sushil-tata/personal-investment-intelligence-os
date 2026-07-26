@@ -1,0 +1,7 @@
+thresholds:
+  low: 4
+  medium: 8
+  high: 15
+policy:
+  advisory_only: true
+  execution_enabled: false

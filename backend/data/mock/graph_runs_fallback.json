@@ -1,0 +1,782 @@
+[
+  {
+    "run_id": "7f7d8ecf-0f0b-42af-81f1-03fcf0891e59",
+    "ticker": "NVDA",
+    "status": "rejected",
+    "requested_by": "test",
+    "node_outputs": [
+      {
+        "node": "portfolio_context_node",
+        "output": {
+          "bucket_alignment": "Strategic Alpha",
+          "concentration_ok": true
+        }
+      },
+      {
+        "node": "research_ingestion_node",
+        "output": {
+          "docs": 3,
+          "freshness": "recent"
+        }
+      },
+      {
+        "node": "source_credibility_node",
+        "output": {
+          "credibility_score": 78
+        }
+      },
+      {
+        "node": "thesis_generation_node",
+        "output": {
+          "thesis": "Quality growth with portfolio diversification benefit"
+        }
+      },
+      {
+        "node": "bear_case_node",
+        "output": {
+          "bear_case": "Valuation compression in macro risk-off"
+        }
+      },
+      {
+        "node": "portfolio_fit_node",
+        "output": {
+          "passed": true
+        }
+      },
+      {
+        "node": "risk_check_node",
+        "output": {
+          "passed": true
+        }
+      },
+      {
+        "node": "recommendation_node",
+        "output": {
+          "ticker": "NVDA",
+          "bull_case": "Quality growth with portfolio diversification benefit",
+          "bear_case": "Valuation compression in macro risk-off",
+          "why_now": "Setup quality and evidence score pass threshold",
+          "why_not_now": "Macro volatility can invalidate timing",
+          "thesis_invalidation_trigger": "Loss of earnings momentum",
+          "position_size_suggestion": "1-2% starter",
+          "time_horizon": "2-5 years",
+          "confidence_score": 72,
+          "data_freshness_timestamp": "2026-06-03T08:22:53.139337+00:00",
+          "source_links": [
+            "https://example.com"
+          ],
+          "advisory_only": true
+        }
+      },
+      {
+        "node": "human_review_node",
+        "output": {
+          "approved": false,
+          "status": "rejected"
+        }
+      }
+    ]
+  },
+  {
+    "run_id": "b03f1fd4-3531-40ef-a4b7-e01f5c809cfc",
+    "ticker": "NVDA",
+    "status": "rejected",
+    "requested_by": "system",
+    "node_outputs": [
+      {
+        "node": "portfolio_context_node",
+        "output": {
+          "bucket_alignment": "Strategic Alpha",
+          "concentration_ok": true
+        }
+      },
+      {
+        "node": "research_ingestion_node",
+        "output": {
+          "docs": 3,
+          "freshness": "recent"
+        }
+      },
+      {
+        "node": "source_credibility_node",
+        "output": {
+          "credibility_score": 78
+        }
+      },
+      {
+        "node": "thesis_generation_node",
+        "output": {
+          "thesis": "Quality growth with portfolio diversification benefit"
+        }
+      },
+      {
+        "node": "bear_case_node",
+        "output": {
+          "bear_case": "Valuation compression in macro risk-off"
+        }
+      },
+      {
+        "node": "portfolio_fit_node",
+        "output": {
+          "passed": true
+        }
+      },
+      {
+        "node": "risk_check_node",
+        "output": {
+          "passed": true
+        }
+      },
+      {
+        "node": "recommendation_node",
+        "output": {
+          "ticker": "NVDA",
+          "bull_case": "Quality growth with portfolio diversification benefit",
+          "bear_case": "Valuation compression in macro risk-off",
+          "why_now": "Setup quality and evidence score pass threshold",
+          "why_not_now": "Macro volatility can invalidate timing",
+          "thesis_invalidation_trigger": "Loss of earnings momentum",
+          "position_size_suggestion": "1-2% starter",
+          "time_horizon": "2-5 years",
+          "confidence_score": 72,
+          "data_freshness_timestamp": "2026-06-03T08:23:21.511583+00:00",
+          "source_links": [
+            "https://example.com"
+          ],
+          "advisory_only": true
+        }
+      },
+      {
+        "node": "human_review_node",
+        "output": {
+          "approved": false,
+          "status": "rejected"
+        }
+      }
+    ]
+  },
+  {
+    "run_id": "6d9dc0cf-a7b8-40d9-afde-663a06e9e59a",
+    "ticker": "NVDA",
+    "status": "accepted",
+    "requested_by": "system",
+    "node_outputs": [
+      {
+        "node": "portfolio_context_node",
+        "output": {
+          "bucket_alignment": "Strategic Alpha",
+          "concentration_ok": true
+        }
+      },
+      {
+        "node": "research_ingestion_node",
+        "output": {
+          "docs": 3,
+          "freshness": "recent"
+        }
+      },
+      {
+        "node": "source_credibility_node",
+        "output": {
+          "credibility_score": 78
+        }
+      },
+      {
+        "node": "thesis_generation_node",
+        "output": {
+          "thesis": "Quality growth with portfolio diversification benefit"
+        }
+      },
+      {
+        "node": "bear_case_node",
+        "output": {
+          "bear_case": "Valuation compression in macro risk-off"
+        }
+      },
+      {
+        "node": "portfolio_fit_node",
+        "output": {
+          "passed": true
+        }
+      },
+      {
+        "node": "risk_check_node",
+        "output": {
+          "passed": true
+        }
+      },
+      {
+        "node": "recommendation_node",
+        "output": {
+          "ticker": "NVDA",
+          "bull_case": "Quality growth with portfolio diversification benefit",
+          "bear_case": "Valuation compression in macro risk-off",
+          "why_now": "Setup quality and evidence score pass threshold",
+          "why_not_now": "Macro volatility can invalidate timing",
+          "thesis_invalidation_trigger": "Loss of earnings momentum",
+          "position_size_suggestion": "1-2% starter",
+          "time_horizon": "2-5 years",
+          "confidence_score": 72,
+          "data_freshness_timestamp": "2026-06-03T08:23:21.521915+00:00",
+          "source_links": [
+            "https://example.com"
+          ],
+          "advisory_only": true
+        }
+      },
+      {
+        "node": "human_review_node",
+        "output": {
+          "approved": true,
+          "status": "accepted"
+        }
+      }
+    ]
+  },
+  {
+    "run_id": "cb27b1ce-96c0-409c-a33f-d1bb9819e91d",
+    "ticker": "NVDA",
+    "status": "rejected",
+    "requested_by": "test",
+    "node_outputs": [
+      {
+        "node": "portfolio_context_node",
+        "output": {
+          "bucket_alignment": "Strategic Alpha",
+          "concentration_ok": true
+        }
+      },
+      {
+        "node": "research_ingestion_node",
+        "output": {
+          "docs": 3,
+          "freshness": "recent"
+        }
+      },
+      {
+        "node": "source_credibility_node",
+        "output": {
+          "credibility_score": 78
+        }
+      },
+      {
+        "node": "thesis_generation_node",
+        "output": {
+          "thesis": "Quality growth with portfolio diversification benefit"
+        }
+      },
+      {
+        "node": "bear_case_node",
+        "output": {
+          "bear_case": "Valuation compression in macro risk-off"
+        }
+      },
+      {
+        "node": "portfolio_fit_node",
+        "output": {
+          "passed": true
+        }
+      },
+      {
+        "node": "risk_check_node",
+        "output": {
+          "passed": true
+        }
+      },
+      {
+        "node": "recommendation_node",
+        "output": {
+          "ticker": "NVDA",
+          "bull_case": "Quality growth with portfolio diversification benefit",
+          "bear_case": "Valuation compression in macro risk-off",
+          "why_now": "Setup quality and evidence score pass threshold",
+          "why_not_now": "Macro volatility can invalidate timing",
+          "thesis_invalidation_trigger": "Loss of earnings momentum",
+          "position_size_suggestion": "1-2% starter",
+          "time_horizon": "2-5 years",
+          "confidence_score": 72,
+          "data_freshness_timestamp": "2026-06-03T08:23:21.548118+00:00",
+          "source_links": [
+            "https://example.com"
+          ],
+          "advisory_only": true
+        }
+      },
+      {
+        "node": "human_review_node",
+        "output": {
+          "approved": false,
+          "status": "rejected"
+        }
+      }
+    ]
+  },
+  {
+    "run_id": "47595b6d-0144-4ccf-95b8-efd6c61205e4",
+    "ticker": "NVDA",
+    "status": "rejected",
+    "requested_by": "system",
+    "node_outputs": [
+      {
+        "node": "portfolio_context_node",
+        "output": {
+          "bucket_alignment": "Strategic Alpha",
+          "concentration_ok": true
+        }
+      },
+      {
+        "node": "research_ingestion_node",
+        "output": {
+          "docs": 3,
+          "freshness": "recent"
+        }
+      },
+      {
+        "node": "source_credibility_node",
+        "output": {
+          "credibility_score": 78
+        }
+      },
+      {
+        "node": "thesis_generation_node",
+        "output": {
+          "thesis": "Quality growth with portfolio diversification benefit"
+        }
+      },
+      {
+        "node": "bear_case_node",
+        "output": {
+          "bear_case": "Valuation compression in macro risk-off"
+        }
+      },
+      {
+        "node": "portfolio_fit_node",
+        "output": {
+          "passed": true
+        }
+      },
+      {
+        "node": "risk_check_node",
+        "output": {
+          "passed": true
+        }
+      },
+      {
+        "node": "recommendation_node",
+        "output": {
+          "ticker": "NVDA",
+          "bull_case": "Quality growth with portfolio diversification benefit",
+          "bear_case": "Valuation compression in macro risk-off",
+          "why_now": "Setup quality and evidence score pass threshold",
+          "why_not_now": "Macro volatility can invalidate timing",
+          "thesis_invalidation_trigger": "Loss of earnings momentum",
+          "position_size_suggestion": "1-2% starter",
+          "time_horizon": "2-5 years",
+          "confidence_score": 72,
+          "data_freshness_timestamp": "2026-06-03T09:05:36.454251+00:00",
+          "source_links": [
+            "https://example.com"
+          ],
+          "advisory_only": true
+        }
+      },
+      {
+        "node": "human_review_node",
+        "output": {
+          "approved": false,
+          "status": "rejected"
+        }
+      }
+    ]
+  },
+  {
+    "run_id": "fc2f5f4b-7a33-4785-a6ce-9b311318a51c",
+    "ticker": "NVDA",
+    "status": "accepted",
+    "requested_by": "system",
+    "node_outputs": [
+      {
+        "node": "portfolio_context_node",
+        "output": {
+          "bucket_alignment": "Strategic Alpha",
+          "concentration_ok": true
+        }
+      },
+      {
+        "node": "research_ingestion_node",
+        "output": {
+          "docs": 3,
+          "freshness": "recent"
+        }
+      },
+      {
+        "node": "source_credibility_node",
+        "output": {
+          "credibility_score": 78
+        }
+      },
+      {
+        "node": "thesis_generation_node",
+        "output": {
+          "thesis": "Quality growth with portfolio diversification benefit"
+        }
+      },
+      {
+        "node": "bear_case_node",
+        "output": {
+          "bear_case": "Valuation compression in macro risk-off"
+        }
+      },
+      {
+        "node": "portfolio_fit_node",
+        "output": {
+          "passed": true
+        }
+      },
+      {
+        "node": "risk_check_node",
+        "output": {
+          "passed": true
+        }
+      },
+      {
+        "node": "recommendation_node",
+        "output": {
+          "ticker": "NVDA",
+          "bull_case": "Quality growth with portfolio diversification benefit",
+          "bear_case": "Valuation compression in macro risk-off",
+          "why_now": "Setup quality and evidence score pass threshold",
+          "why_not_now": "Macro volatility can invalidate timing",
+          "thesis_invalidation_trigger": "Loss of earnings momentum",
+          "position_size_suggestion": "1-2% starter",
+          "time_horizon": "2-5 years",
+          "confidence_score": 72,
+          "data_freshness_timestamp": "2026-06-03T09:05:36.464993+00:00",
+          "source_links": [
+            "https://example.com"
+          ],
+          "advisory_only": true
+        }
+      },
+      {
+        "node": "human_review_node",
+        "output": {
+          "approved": true,
+          "status": "accepted"
+        }
+      }
+    ]
+  },
+  {
+    "run_id": "1ceb28e2-1143-462a-8c47-7db35f14c7c4",
+    "ticker": "NVDA",
+    "status": "rejected",
+    "requested_by": "test",
+    "node_outputs": [
+      {
+        "node": "portfolio_context_node",
+        "output": {
+          "bucket_alignment": "Strategic Alpha",
+          "concentration_ok": true
+        }
+      },
+      {
+        "node": "research_ingestion_node",
+        "output": {
+          "docs": 3,
+          "freshness": "recent"
+        }
+      },
+      {
+        "node": "source_credibility_node",
+        "output": {
+          "credibility_score": 78
+        }
+      },
+      {
+        "node": "thesis_generation_node",
+        "output": {
+          "thesis": "Quality growth with portfolio diversification benefit"
+        }
+      },
+      {
+        "node": "bear_case_node",
+        "output": {
+          "bear_case": "Valuation compression in macro risk-off"
+        }
+      },
+      {
+        "node": "portfolio_fit_node",
+        "output": {
+          "passed": true
+        }
+      },
+      {
+        "node": "risk_check_node",
+        "output": {
+          "passed": true
+        }
+      },
+      {
+        "node": "recommendation_node",
+        "output": {
+          "ticker": "NVDA",
+          "bull_case": "Quality growth with portfolio diversification benefit",
+          "bear_case": "Valuation compression in macro risk-off",
+          "why_now": "Setup quality and evidence score pass threshold",
+          "why_not_now": "Macro volatility can invalidate timing",
+          "thesis_invalidation_trigger": "Loss of earnings momentum",
+          "position_size_suggestion": "1-2% starter",
+          "time_horizon": "2-5 years",
+          "confidence_score": 72,
+          "data_freshness_timestamp": "2026-06-03T09:05:36.490896+00:00",
+          "source_links": [
+            "https://example.com"
+          ],
+          "advisory_only": true
+        }
+      },
+      {
+        "node": "human_review_node",
+        "output": {
+          "approved": false,
+          "status": "rejected"
+        }
+      }
+    ]
+  },
+  {
+    "run_id": "648ed6d8-c346-4015-a97f-a16a67af6080",
+    "ticker": "NVDA",
+    "status": "rejected",
+    "requested_by": "test",
+    "node_outputs": [
+      {
+        "node": "portfolio_context_node",
+        "output": {
+          "bucket_alignment": "Strategic Alpha",
+          "concentration_ok": true
+        }
+      },
+      {
+        "node": "research_ingestion_node",
+        "output": {
+          "docs": 3,
+          "freshness": "recent"
+        }
+      },
+      {
+        "node": "source_credibility_node",
+        "output": {
+          "credibility_score": 78
+        }
+      },
+      {
+        "node": "thesis_generation_node",
+        "output": {
+          "thesis": "Quality growth with portfolio diversification benefit"
+        }
+      },
+      {
+        "node": "bear_case_node",
+        "output": {
+          "bear_case": "Valuation compression in macro risk-off"
+        }
+      },
+      {
+        "node": "portfolio_fit_node",
+        "output": {
+          "passed": true
+        }
+      },
+      {
+        "node": "risk_check_node",
+        "output": {
+          "passed": true
+        }
+      },
+      {
+        "node": "recommendation_node",
+        "output": {
+          "ticker": "NVDA",
+          "bull_case": "Quality growth with portfolio diversification benefit",
+          "bear_case": "Valuation compression in macro risk-off",
+          "why_now": "Setup quality and evidence score pass threshold",
+          "why_not_now": "Macro volatility can invalidate timing",
+          "thesis_invalidation_trigger": "Loss of earnings momentum",
+          "position_size_suggestion": "1-2% starter",
+          "time_horizon": "2-5 years",
+          "confidence_score": 72,
+          "data_freshness_timestamp": "2026-07-26T08:22:01.707646+00:00",
+          "source_links": [
+            "https://example.com"
+          ],
+          "advisory_only": true
+        }
+      },
+      {
+        "node": "human_review_node",
+        "output": {
+          "approved": false,
+          "status": "rejected"
+        }
+      }
+    ]
+  },
+  {
+    "run_id": "1ca906ff-1ddc-4937-99f6-df26fb2da02c",
+    "ticker": "NVDA",
+    "status": "rejected",
+    "requested_by": "test",
+    "node_outputs": [
+      {
+        "node": "portfolio_context_node",
+        "output": {
+          "bucket_alignment": "Strategic Alpha",
+          "concentration_ok": true
+        }
+      },
+      {
+        "node": "research_ingestion_node",
+        "output": {
+          "docs": 3,
+          "freshness": "recent"
+        }
+      },
+      {
+        "node": "source_credibility_node",
+        "output": {
+          "credibility_score": 78
+        }
+      },
+      {
+        "node": "thesis_generation_node",
+        "output": {
+          "thesis": "Quality growth with portfolio diversification benefit"
+        }
+      },
+      {
+        "node": "bear_case_node",
+        "output": {
+          "bear_case": "Valuation compression in macro risk-off"
+        }
+      },
+      {
+        "node": "portfolio_fit_node",
+        "output": {
+          "passed": true
+        }
+      },
+      {
+        "node": "risk_check_node",
+        "output": {
+          "passed": true
+        }
+      },
+      {
+        "node": "recommendation_node",
+        "output": {
+          "ticker": "NVDA",
+          "bull_case": "Quality growth with portfolio diversification benefit",
+          "bear_case": "Valuation compression in macro risk-off",
+          "why_now": "Setup quality and evidence score pass threshold",
+          "why_not_now": "Macro volatility can invalidate timing",
+          "thesis_invalidation_trigger": "Loss of earnings momentum",
+          "position_size_suggestion": "1-2% starter",
+          "time_horizon": "2-5 years",
+          "confidence_score": 72,
+          "data_freshness_timestamp": "2026-07-26T08:22:09.598418+00:00",
+          "source_links": [
+            "https://example.com"
+          ],
+          "advisory_only": true
+        }
+      },
+      {
+        "node": "human_review_node",
+        "output": {
+          "approved": false,
+          "status": "rejected"
+        }
+      }
+    ]
+  },
+  {
+    "run_id": "776a4403-4a8d-4e72-b553-d96b3407bf31",
+    "ticker": "NVDA",
+    "status": "rejected",
+    "requested_by": "test",
+    "node_outputs": [
+      {
+        "node": "portfolio_context_node",
+        "output": {
+          "bucket_alignment": "Strategic Alpha",
+          "concentration_ok": true
+        }
+      },
+      {
+        "node": "research_ingestion_node",
+        "output": {
+          "docs": 3,
+          "freshness": "recent"
+        }
+      },
+      {
+        "node": "source_credibility_node",
+        "output": {
+          "credibility_score": 78
+        }
+      },
+      {
+        "node": "thesis_generation_node",
+        "output": {
+          "thesis": "Quality growth with portfolio diversification benefit"
+        }
+      },
+      {
+        "node": "bear_case_node",
+        "output": {
+          "bear_case": "Valuation compression in macro risk-off"
+        }
+      },
+      {
+        "node": "portfolio_fit_node",
+        "output": {
+          "passed": true
+        }
+      },
+      {
+        "node": "risk_check_node",
+        "output": {
+          "passed": true
+        }
+      },
+      {
+        "node": "recommendation_node",
+        "output": {
+          "ticker": "NVDA",
+          "bull_case": "Quality growth with portfolio diversification benefit",
+          "bear_case": "Valuation compression in macro risk-off",
+          "why_now": "Setup quality and evidence score pass threshold",
+          "why_not_now": "Macro volatility can invalidate timing",
+          "thesis_invalidation_trigger": "Loss of earnings momentum",
+          "position_size_suggestion": "1-2% starter",
+          "time_horizon": "2-5 years",
+          "confidence_score": 72,
+          "data_freshness_timestamp": "2026-07-26T08:24:16.029650+00:00",
+          "source_links": [
+            "https://example.com"
+          ],
+          "advisory_only": true
+        }
+      },
+      {
+        "node": "human_review_node",
+        "output": {
+          "approved": false,
+          "status": "rejected"
+        }
+      }
+    ]
+  }
+]

@@ -1,0 +1,6 @@
+limits:
+  max_position_pct: 5
+  max_tactical_allocation_pct: 10
+  max_single_ticker_pct: 7
+  max_daily_loss_pct: 2
+  max_weekly_loss_pct: 4

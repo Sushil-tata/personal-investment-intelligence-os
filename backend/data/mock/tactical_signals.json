@@ -1,0 +1,9 @@
+[
+  {
+    "ticker": "AVGO",
+    "signal": "Watch",
+    "risk_reward": 2.1,
+    "bucket": "Tactical Opportunities",
+    "advisory_only": true
+  }
+]

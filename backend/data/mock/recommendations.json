@@ -1,0 +1,22 @@
+[
+  {
+    "ticker": "NVDA",
+    "bucket": "Strategic Alpha",
+    "bull_case": "Sustained AI demand and pricing power",
+    "bear_case": "Valuation compression and inventory cycles",
+    "why_now": "Strong earnings momentum and backlog visibility",
+    "why_not_now": "Multiple risk in tightening liquidity",
+    "thesis_invalidation_trigger": "Sharp margin contraction across two quarters",
+    "position_size_suggestion": "2-3% in Strategic Alpha",
+    "time_horizon": "2-5 years",
+    "confidence_score": 76,
+    "data_freshness_timestamp": "2026-06-03T00:00:00Z",
+    "source_links": [
+      "https://example.com/nvda-thesis"
+    ],
+    "rationale": "Scoring engine passed threshold with acceptable portfolio fit",
+    "model_version": "piios-model-0.1.0",
+    "data_source": "mock",
+    "advisory_only": true
+  }
+]

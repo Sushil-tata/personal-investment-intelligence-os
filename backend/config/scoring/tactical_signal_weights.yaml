@@ -1,0 +1,8 @@
+weights:
+  trend: 0.25
+  momentum: 0.2
+  volume: 0.15
+  volatility: 0.1
+  news_sentiment: 0.1
+  earnings_risk: 0.1
+  risk_reward: 0.1

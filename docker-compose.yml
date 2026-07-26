@@ -1,0 +1,16 @@
+version: "3.9"
+services:
+  postgres:
+    image: postgres:16
+    container_name: piios-postgres
+    environment:
+      POSTGRES_USER: piios
+      POSTGRES_PASSWORD: piios
+      POSTGRES_DB: piios_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - piios_pg_data:/var/lib/postgresql/data
+
+volumes:
+  piios_pg_data:

@@ -1,0 +1,9 @@
+weights:
+  quality: 0.2
+  growth: 0.15
+  valuation: 0.15
+  momentum: 0.15
+  balance_sheet: 0.1
+  macro_fit: 0.1
+  portfolio_fit: 0.1
+  risk_contribution: 0.05
