@@ -55,6 +55,12 @@ Rollback:
 
 ## 2A.2 Thesis Domain and Versioning
 
+Status:
+- Completed on 2026-07-26.
+- Additive migration 0006 implemented and validated with upgrade/downgrade cycle.
+- Thesis bounded context, immutable versioning, SQLModel repositories, compatibility projection, and shadow equivalence diagnostics delivered.
+- Existing thesis route contracts and route availability tests passed.
+
 Scope:
 - thesis root + immutable thesis versions + lifecycle state machine
 
