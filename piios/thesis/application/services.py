@@ -24,7 +24,7 @@ class ThesisApplicationService:
 
     def create_thesis(self, command: CreateThesisCommand) -> ThesisDTO:
         now = _now()
-        thesis_id = self._roots.next_thesis_id()
+        thesis_id = command.thesis_id or self._roots.next_thesis_id()
         root = ThesisRoot(
             thesis_id=thesis_id,
             ticker=command.ticker,

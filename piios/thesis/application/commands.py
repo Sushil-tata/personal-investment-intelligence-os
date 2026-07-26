@@ -21,6 +21,7 @@ class CreateThesisCommand:
     expected_holding_period: str
     source_documents: list[str] = field(default_factory=list)
     confidence_score: float = 0.0
+    thesis_id: str | None = None
 
 
 @dataclass(frozen=True)
