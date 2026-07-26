@@ -165,6 +165,55 @@ class InvestmentThesisEntity(SQLModel, table=True):
     updated_at: str
 
 
+class ThesisRootEntity(SQLModel, table=True):
+    __tablename__ = "thesis_roots"
+    __table_args__ = (
+        UniqueConstraint("thesis_id", name="uq_thesis_roots_thesis_id"),
+        Index("ix_thesis_roots_ticker", "ticker"),
+        Index("ix_thesis_roots_status", "lifecycle_status"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    thesis_id: str
+    ticker: str
+    lifecycle_status: str
+    current_version_number: int = 1
+    created_at: str
+    updated_at: str
+    closed_reason: str | None = None
+    closed_at: str | None = None
+
+
+class ThesisVersionEntity(SQLModel, table=True):
+    __tablename__ = "thesis_versions"
+    __table_args__ = (
+        UniqueConstraint("version_id", name="uq_thesis_versions_version_id"),
+        UniqueConstraint("thesis_id", "version_number", name="uq_thesis_versions_thesis_version_number"),
+        Index("ix_thesis_versions_thesis_id", "thesis_id"),
+        Index("ix_thesis_versions_status", "status"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    version_id: str
+    thesis_id: str
+    version_number: int
+    asset_name: str
+    theme: str
+    bucket: str
+    thesis: str
+    bull_case: str
+    bear_case: str
+    why_now: str
+    why_not_now: str
+    invalidation_trigger: str
+    valuation_notes: str
+    expected_holding_period: str
+    source_documents: str
+    confidence_score: float
+    status: str
+    created_at: str
+
+
 class TacticalSignalEntity(SQLModel, table=True):
     __tablename__ = "tactical_signals"
     id: Optional[int] = Field(default=None, primary_key=True)
