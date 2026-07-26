@@ -93,6 +93,10 @@ class SQLModelThesisVersionRepository(ThesisVersionRepositoryProtocol):
         self._session.commit()
         return version
 
+    def get_by_version_id(self, version_id: str) -> ThesisVersion | None:
+        row = self._session.exec(select(ThesisVersionEntity).where(ThesisVersionEntity.version_id == version_id)).first()
+        return _version_from_row(row) if row else None
+
     def get_latest(self, thesis_id: str) -> ThesisVersion | None:
         row = self._session.exec(
             select(ThesisVersionEntity)

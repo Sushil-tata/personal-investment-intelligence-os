@@ -34,6 +34,13 @@ class InMemoryThesisVersionRepository(ThesisVersionRepositoryProtocol):
         self._items.setdefault(version.thesis_id, []).append(version)
         return version
 
+    def get_by_version_id(self, version_id: str) -> ThesisVersion | None:
+        for versions in self._items.values():
+            for item in versions:
+                if item.version_id == version_id:
+                    return item
+        return None
+
     def get_latest(self, thesis_id: str) -> ThesisVersion | None:
         versions = self._items.get(thesis_id, [])
         return versions[-1] if versions else None
