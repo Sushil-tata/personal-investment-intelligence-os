@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -262,3 +262,58 @@ def test_engine_trace_contains_deterministic_strategy_governance_hash() -> None:
     assert first_payload["strategy_governance"]["strategy_hash"]
     assert first_payload["strategy_governance"]["strategy_hash"] == second_payload["strategy_governance"]["strategy_hash"]
     assert first_payload["strategy_governance"]["strategy_profile"]["strategy_key"] == "balanced-v1"
+
+
+def test_engine_trace_hash_normalizes_equivalent_timestamps_and_metadata_order() -> None:
+    engine = _build_engine()
+
+    utc_input = _build_input()
+    offset_tz = timezone(timedelta(hours=8))
+    same_moment = utc_input.generated_at.astimezone(offset_tz)
+
+    offset_input = RecommendationEngineInput(
+        proposal_id=utc_input.proposal_id,
+        target_type=utc_input.target_type,
+        target_key=utc_input.target_key,
+        scope=utc_input.scope,
+        thesis_version_id=utc_input.thesis_version_id,
+        generated_at=same_moment,
+        thesis_health_snapshot=ThesisHealthSnapshot(
+            thesis_version_id=utc_input.thesis_health_snapshot.thesis_version_id,
+            computation_version=utc_input.thesis_health_snapshot.computation_version,
+            computed_at=utc_input.thesis_health_snapshot.computed_at.astimezone(offset_tz),
+            evidence_freshness=utc_input.thesis_health_snapshot.evidence_freshness,
+            evidence_quality=utc_input.thesis_health_snapshot.evidence_quality,
+            supporting_strength=utc_input.thesis_health_snapshot.supporting_strength,
+            contradictory_strength=utc_input.thesis_health_snapshot.contradictory_strength,
+            provenance_completeness=utc_input.thesis_health_snapshot.provenance_completeness,
+            thesis_health_index=utc_input.thesis_health_snapshot.thesis_health_index,
+        ),
+        claims=utc_input.claims,
+        evidence_items=utc_input.evidence_items,
+        interpretations=utc_input.interpretations,
+        portfolio_context=utc_input.portfolio_context,
+        strategy_key=utc_input.strategy_key,
+        metadata={"z_key": "z", "a_key": "a"},
+    )
+
+    utc_with_reordered_metadata = RecommendationEngineInput(
+        proposal_id=utc_input.proposal_id,
+        target_type=utc_input.target_type,
+        target_key=utc_input.target_key,
+        scope=utc_input.scope,
+        thesis_version_id=utc_input.thesis_version_id,
+        generated_at=utc_input.generated_at,
+        thesis_health_snapshot=utc_input.thesis_health_snapshot,
+        claims=utc_input.claims,
+        evidence_items=utc_input.evidence_items,
+        interpretations=utc_input.interpretations,
+        portfolio_context=utc_input.portfolio_context,
+        strategy_key=utc_input.strategy_key,
+        metadata={"a_key": "a", "z_key": "z"},
+    )
+
+    first = engine.evaluate(offset_input)
+    second = engine.evaluate(utc_with_reordered_metadata)
+
+    assert first.trace.input_hash == second.trace.input_hash

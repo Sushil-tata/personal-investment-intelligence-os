@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 
 from piios.decision_contracts.application.scoring_components import (
     ComponentOrientation,
@@ -386,16 +386,16 @@ def _canonical_trace_payload(
             for row in data.interpretations
             if row.effective_to is None
         ],
-        key=lambda row: (row["claim_id"], row["interpretation_id"]),
+        key=lambda row: (row["claim_id"], row["evidence_id"], row["interpretation_id"]),
     )
 
     component_scores = [
         {
             "component_key": row.component_key,
             "orientation": row.orientation.value,
-            "value": row.value,
+            "value": _r6(row.value),
             "reason_code": row.reason_code,
-            "detail": row.detail,
+            "detail": {key: str(value) for key, value in sorted(row.detail.items(), key=lambda item: item[0])},
         }
         for row in sorted(scores, key=lambda item: item.component_key)
     ]
@@ -410,30 +410,31 @@ def _canonical_trace_payload(
             "strategy_key": data.strategy_key,
         },
         "strategy_governance": strategy_governance,
-        "generated_at": data.generated_at.isoformat(),
+        "generated_at": _canonical_timestamp(data.generated_at),
+        "metadata": {key: str(value) for key, value in sorted(data.metadata.items(), key=lambda item: item[0])},
         "thesis_health": {
             "thesis_version_id": data.thesis_health_snapshot.thesis_version_id,
             "computation_version": data.thesis_health_snapshot.computation_version,
-            "computed_at": data.thesis_health_snapshot.computed_at.isoformat(),
-            "evidence_freshness": data.thesis_health_snapshot.evidence_freshness,
-            "evidence_quality": data.thesis_health_snapshot.evidence_quality,
-            "supporting_strength": data.thesis_health_snapshot.supporting_strength,
-            "contradictory_strength": data.thesis_health_snapshot.contradictory_strength,
-            "provenance_completeness": data.thesis_health_snapshot.provenance_completeness,
-            "thesis_health_index": data.thesis_health_snapshot.thesis_health_index,
+            "computed_at": _canonical_timestamp(data.thesis_health_snapshot.computed_at),
+            "evidence_freshness": _r6(data.thesis_health_snapshot.evidence_freshness),
+            "evidence_quality": _r6(data.thesis_health_snapshot.evidence_quality),
+            "supporting_strength": _r6(data.thesis_health_snapshot.supporting_strength),
+            "contradictory_strength": _r6(data.thesis_health_snapshot.contradictory_strength),
+            "provenance_completeness": _r6(data.thesis_health_snapshot.provenance_completeness),
+            "thesis_health_index": _r6(data.thesis_health_snapshot.thesis_health_index),
         },
         "portfolio_context": {
             "has_existing_position": data.portfolio_context.has_existing_position,
-            "current_weight": data.portfolio_context.current_weight,
-            "target_weight": data.portfolio_context.target_weight,
-            "max_position_weight": data.portfolio_context.max_position_weight,
-            "concentration_risk": data.portfolio_context.concentration_risk,
-            "liquidity_risk": data.portfolio_context.liquidity_risk,
-            "portfolio_underweight_signal": data.portfolio_context.portfolio_underweight_signal,
-            "opportunity_signal": data.portfolio_context.opportunity_signal,
-            "valuation_signal": data.portfolio_context.valuation_signal,
-            "expected_return_signal": data.portfolio_context.expected_return_signal,
-            "relationship_signal": data.portfolio_context.relationship_signal,
+            "current_weight": _r6(data.portfolio_context.current_weight),
+            "target_weight": _r6(data.portfolio_context.target_weight),
+            "max_position_weight": _r6(data.portfolio_context.max_position_weight),
+            "concentration_risk": _r6(data.portfolio_context.concentration_risk),
+            "liquidity_risk": _r6(data.portfolio_context.liquidity_risk),
+            "portfolio_underweight_signal": _r6(data.portfolio_context.portfolio_underweight_signal),
+            "opportunity_signal": _r6(data.portfolio_context.opportunity_signal),
+            "valuation_signal": _r6(data.portfolio_context.valuation_signal),
+            "expected_return_signal": _r6(data.portfolio_context.expected_return_signal),
+            "relationship_signal": _r6(data.portfolio_context.relationship_signal),
         },
         "claims": claims,
         "evidence": evidence,
@@ -441,19 +442,19 @@ def _canonical_trace_payload(
         "component_scores": component_scores,
         "strategy_result": {
             "strategy_key": strategy_result.strategy_key,
-            "overall_score": strategy_result.overall_score,
+            "overall_score": _r6(strategy_result.overall_score),
             "action": strategy_result.action.value,
             "position_size_range": (
                 {
-                    "min_weight": strategy_result.position_size_range.min_weight,
-                    "max_weight": strategy_result.position_size_range.max_weight,
+                    "min_weight": _r6(strategy_result.position_size_range.min_weight),
+                    "max_weight": _r6(strategy_result.position_size_range.max_weight),
                 }
                 if strategy_result.position_size_range
                 else None
             ),
             "priority": {
                 "level": strategy_result.priority.level.value,
-                "score": strategy_result.priority.score,
+                "score": _r6(strategy_result.priority.score),
             },
             "confidence_label": strategy_result.confidence_label,
             "required_human_review": strategy_result.required_human_review,
@@ -461,23 +462,23 @@ def _canonical_trace_payload(
             "component_breakdown": [
                 {
                     "component_key": row.component_key,
-                    "weight": row.weight,
-                    "value": row.value,
-                    "normalized_value": row.normalized_value,
-                    "contribution": row.contribution,
+                    "weight": _r6(row.weight),
+                    "value": _r6(row.value),
+                    "normalized_value": _r6(row.normalized_value),
+                    "contribution": _r6(row.contribution),
                     "orientation": row.orientation.value,
                 }
                 for row in strategy_result.component_breakdown
             ],
         },
         "confidence_breakdown": {
-            "company_quality": confidence.dimensions.company_quality,
-            "valuation_attractiveness": confidence.dimensions.valuation_attractiveness,
-            "portfolio_suitability": confidence.dimensions.portfolio_suitability,
-            "recommendation_confidence": confidence.dimensions.recommendation_confidence,
-            "relationship_confidence": confidence.dimensions.relationship_confidence,
-            "expected_return": confidence.dimensions.expected_return,
-            "overall_confidence": confidence.overall_confidence,
+            "company_quality": _r6(confidence.dimensions.company_quality),
+            "valuation_attractiveness": _r6(confidence.dimensions.valuation_attractiveness),
+            "portfolio_suitability": _r6(confidence.dimensions.portfolio_suitability),
+            "recommendation_confidence": _r6(confidence.dimensions.recommendation_confidence),
+            "relationship_confidence": _r6(confidence.dimensions.relationship_confidence),
+            "expected_return": _r6(confidence.dimensions.expected_return),
+            "overall_confidence": _r6(confidence.overall_confidence),
         },
         "explanation": {
             "recommendation": explanation.recommendation,
@@ -488,6 +489,16 @@ def _canonical_trace_payload(
             "strategy_key": explanation.strategy_key,
         },
     }
+
+
+def _canonical_timestamp(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _r6(value: float) -> float:
+    return round(float(value), 6)
 
 
 def _build_reasons(
