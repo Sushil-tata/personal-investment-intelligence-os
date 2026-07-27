@@ -22,6 +22,8 @@ from .sqlmodel_entities import (
     RecommendationProposalEntity,
     RecommendationProposalVersionEntity,
     RecommendationReasonEntity,
+    RecommendationTraceEntity,
+    RecommendationTraceEntryEntity,
 )
 from .sqlmodel_repositories import (
     SQLModelInvestmentDecisionRepository,
@@ -55,6 +57,8 @@ __all__ = [
     "RecommendationProposalVersionEntity",
     "RecommendationInputSnapshotEntity",
     "RecommendationReasonEntity",
+    "RecommendationTraceEntity",
+    "RecommendationTraceEntryEntity",
     "RecommendationClaimLinkEntity",
     "RecommendationEvidenceLinkEntity",
     "InvestmentDecisionEntity",

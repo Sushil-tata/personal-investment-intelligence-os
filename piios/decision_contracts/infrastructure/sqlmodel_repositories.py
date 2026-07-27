@@ -12,6 +12,7 @@ from piios.decision_contracts.domain.proposal import (
     RecommendationProposalVersion,
     RecommendationReason,
 )
+from piios.decision_contracts.domain.recommendation_trace import RecommendationTrace, TraceEntry
 from piios.decision_contracts.infrastructure.repository_protocols import (
     InvestmentDecisionRepositoryProtocol,
     RecommendationProposalRepositoryProtocol,
@@ -28,6 +29,8 @@ from piios.decision_contracts.infrastructure.sqlmodel_entities import (
     RecommendationProposalEntity,
     RecommendationProposalVersionEntity,
     RecommendationReasonEntity,
+    RecommendationTraceEntity,
+    RecommendationTraceEntryEntity,
 )
 from piios.decision_contracts.infrastructure.sqlmodel_mappers import (
     claim_link_from_row,
@@ -44,6 +47,10 @@ from piios.decision_contracts.infrastructure.sqlmodel_mappers import (
     reason_to_row,
     snapshot_from_row,
     snapshot_to_row,
+    trace_entry_from_row,
+    trace_entry_to_row,
+    trace_from_row,
+    trace_to_row,
 )
 
 
@@ -154,6 +161,12 @@ class SQLModelInvestmentDecisionRepository(InvestmentDecisionRepositoryProtocol)
             raise ValueError(f"decision_id already exists: {decision.decision_id}") from exc
         return decision
 
+    def get(self, decision_id: str) -> InvestmentDecision | None:
+        row = self._session.exec(
+            select(InvestmentDecisionEntity).where(InvestmentDecisionEntity.decision_id == decision_id)
+        ).first()
+        return decision_from_row(row) if row else None
+
     def list_for_proposal_version(self, proposal_version_id: str) -> list[InvestmentDecision]:
         rows = self._session.exec(
             select(InvestmentDecisionEntity)
@@ -180,6 +193,71 @@ class SQLModelInvestmentDecisionRepository(InvestmentDecisionRepositoryProtocol)
 class SQLModelRecommendationTraceRepository(RecommendationTraceRepositoryProtocol):
     def __init__(self, session: Session) -> None:
         self._session = session
+
+    def create_trace(self, trace: RecommendationTrace) -> RecommendationTrace:
+        self.create_trace_uncommitted(trace)
+        self._session.commit()
+        return trace
+
+    def create_trace_uncommitted(self, trace: RecommendationTrace) -> RecommendationTrace:
+        self._session.add(trace_to_row(trace))
+        for entry in trace.entries:
+            self._session.add(trace_entry_to_row(entry))
+        try:
+            self._session.flush()
+        except IntegrityError as exc:
+            self._session.rollback()
+            raise ValueError(
+                "trace duplicate on trace_id, proposal_version_id, execution_identity, or entry sequence"
+            ) from exc
+        return trace
+
+    def get_trace(self, trace_id: str) -> RecommendationTrace | None:
+        trace_row = self._session.exec(
+            select(RecommendationTraceEntity).where(RecommendationTraceEntity.trace_id == trace_id)
+        ).first()
+        if trace_row is None:
+            return None
+        return trace_from_row(trace_row, self.list_entries(trace_id))
+
+    def get_trace_for_proposal_version(self, proposal_version_id: str) -> RecommendationTrace | None:
+        trace_row = self._session.exec(
+            select(RecommendationTraceEntity).where(
+                RecommendationTraceEntity.proposal_version_id == proposal_version_id
+            )
+        ).first()
+        if trace_row is None:
+            return None
+        return trace_from_row(trace_row, self.list_entries(trace_row.trace_id))
+
+    def get_trace_for_execution_identity(self, execution_identity: str) -> RecommendationTrace | None:
+        trace_row = self._session.exec(
+            select(RecommendationTraceEntity).where(
+                RecommendationTraceEntity.execution_identity == execution_identity
+            )
+        ).first()
+        if trace_row is None:
+            return None
+        return trace_from_row(trace_row, self.list_entries(trace_row.trace_id))
+
+    def list_entries(self, trace_id: str) -> list[TraceEntry]:
+        rows = self._session.exec(
+            select(RecommendationTraceEntryEntity)
+            .where(RecommendationTraceEntryEntity.trace_id == trace_id)
+            .order_by(
+                RecommendationTraceEntryEntity.sequence_number.asc(),
+                RecommendationTraceEntryEntity.entry_id.asc(),
+            )
+        ).all()
+        return [trace_entry_from_row(row) for row in rows]
+
+    def trace_exists_for_execution_identity(self, execution_identity: str) -> bool:
+        row = self._session.exec(
+            select(RecommendationTraceEntity.trace_id).where(
+                RecommendationTraceEntity.execution_identity == execution_identity
+            )
+        ).first()
+        return row is not None
 
     def create_claim_links(self, links: tuple[RecommendationClaimLink, ...]) -> tuple[RecommendationClaimLink, ...]:
         for row in links:

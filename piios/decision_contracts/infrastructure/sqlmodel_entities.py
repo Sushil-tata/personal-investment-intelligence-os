@@ -148,6 +148,74 @@ class RecommendationEvidenceLinkEntity(SQLModel, table=True):
     conflict_flag: bool
 
 
+class RecommendationTraceEntity(SQLModel, table=True):
+    __tablename__ = "decision_recommendation_traces"
+    __table_args__ = (
+        UniqueConstraint("trace_id", name="uq_decision_recommendation_traces_trace_id"),
+        UniqueConstraint(
+            "proposal_version_id",
+            name="uq_decision_recommendation_traces_proposal_version_id",
+        ),
+        UniqueConstraint(
+            "execution_identity",
+            name="uq_decision_recommendation_traces_execution_identity",
+        ),
+        Index("ix_decision_recommendation_traces_snapshot", "input_snapshot_id"),
+        Index("ix_decision_recommendation_traces_status", "execution_status"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    trace_id: str
+    proposal_id: str = Field(foreign_key="decision_recommendation_proposals.proposal_id")
+    proposal_version_id: str = Field(
+        foreign_key="decision_recommendation_proposal_versions.proposal_version_id"
+    )
+    input_snapshot_id: str = Field(
+        foreign_key="decision_recommendation_input_snapshots.snapshot_id"
+    )
+    engine_name: str
+    engine_version: str
+    policy_version: str
+    strategy_version: str
+    execution_identity: str
+    computation_started_at: str
+    computation_completed_at: str
+    trace_schema_version: str
+    execution_status: str
+    is_authoritative: bool
+    created_at: str
+
+
+class RecommendationTraceEntryEntity(SQLModel, table=True):
+    __tablename__ = "decision_recommendation_trace_entries"
+    __table_args__ = (
+        UniqueConstraint("entry_id", name="uq_decision_recommendation_trace_entries_entry_id"),
+        UniqueConstraint(
+            "trace_id",
+            "sequence_number",
+            name="uq_decision_recommendation_trace_entries_trace_seq",
+        ),
+        Index("ix_decision_recommendation_trace_entries_trace", "trace_id"),
+        Index("ix_decision_recommendation_trace_entries_type", "entry_type"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    entry_id: str
+    trace_id: str = Field(foreign_key="decision_recommendation_traces.trace_id")
+    sequence_number: int
+    entry_type: str
+    component_name: str
+    component_version: str
+    status: str
+    input_references_json: str
+    output_references_json: str
+    rule_evaluations_json: str
+    numeric_outputs_json: str
+    categorical_outputs_json: str
+    warning_codes_json: str
+    created_at: str
+
+
 class InvestmentDecisionEntity(SQLModel, table=True):
     __tablename__ = "decision_investment_decisions"
     __table_args__ = (

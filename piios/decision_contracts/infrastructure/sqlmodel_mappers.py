@@ -1,14 +1,20 @@
 from __future__ import annotations
 
 from datetime import datetime
+import json
 
 from piios.decision_contracts.domain.decision import InvestmentDecision
 from piios.decision_contracts.domain.enums import (
     DecisionState,
     Priority,
     ProposalStatus,
+    RuleResult,
+    RuleSeverity,
     ReasonType,
     RecommendationAction,
+    TraceEntryStatus,
+    TraceEntryType,
+    TraceExecutionStatus,
 )
 from piios.decision_contracts.domain.proposal import (
     RecommendationClaimLink,
@@ -17,6 +23,12 @@ from piios.decision_contracts.domain.proposal import (
     RecommendationProposal,
     RecommendationProposalVersion,
     RecommendationReason,
+)
+from piios.decision_contracts.domain.recommendation_trace import (
+    ComponentResultReference,
+    RecommendationTrace,
+    RuleEvaluation,
+    TraceEntry,
 )
 from piios.decision_contracts.domain.value_objects import (
     ActionProposal,
@@ -34,6 +46,8 @@ from piios.decision_contracts.infrastructure.sqlmodel_entities import (
     RecommendationProposalEntity,
     RecommendationProposalVersionEntity,
     RecommendationReasonEntity,
+    RecommendationTraceEntity,
+    RecommendationTraceEntryEntity,
 )
 
 
@@ -281,6 +295,116 @@ def decision_from_row(row: InvestmentDecisionEntity) -> InvestmentDecision:
         preferred_alternative_target_key=row.preferred_alternative_target_key,
         modified_action=modified_action,
         modified_position_size=modified_position,
+    )
+
+
+def trace_to_row(trace: RecommendationTrace) -> RecommendationTraceEntity:
+    return RecommendationTraceEntity(
+        trace_id=trace.trace_id,
+        proposal_id=trace.proposal_id,
+        proposal_version_id=trace.proposal_version_id,
+        input_snapshot_id=trace.input_snapshot_id,
+        engine_name=trace.engine_name,
+        engine_version=trace.engine_version,
+        policy_version=trace.policy_version,
+        strategy_version=trace.strategy_version,
+        execution_identity=trace.execution_identity,
+        computation_started_at=trace.computation_started_at.isoformat(),
+        computation_completed_at=trace.computation_completed_at.isoformat(),
+        trace_schema_version=trace.trace_schema_version,
+        execution_status=trace.execution_status.value,
+        is_authoritative=trace.is_authoritative,
+        created_at=trace.created_at.isoformat(),
+    )
+
+
+def trace_from_row(row: RecommendationTraceEntity, entries: list[TraceEntry]) -> RecommendationTrace:
+    return RecommendationTrace(
+        trace_id=row.trace_id,
+        proposal_id=row.proposal_id,
+        proposal_version_id=row.proposal_version_id,
+        input_snapshot_id=row.input_snapshot_id,
+        engine_name=row.engine_name,
+        engine_version=row.engine_version,
+        policy_version=row.policy_version,
+        strategy_version=row.strategy_version,
+        execution_identity=row.execution_identity,
+        computation_started_at=_parse_dt(row.computation_started_at),
+        computation_completed_at=_parse_dt(row.computation_completed_at),
+        trace_schema_version=row.trace_schema_version,
+        execution_status=TraceExecutionStatus(row.execution_status),
+        is_authoritative=row.is_authoritative,
+        entries=tuple(entries),
+        created_at=_parse_dt(row.created_at),
+    )
+
+
+def trace_entry_to_row(entry: TraceEntry) -> RecommendationTraceEntryEntity:
+    return RecommendationTraceEntryEntity(
+        entry_id=entry.entry_id,
+        trace_id=entry.trace_id,
+        sequence_number=entry.sequence_number,
+        entry_type=entry.entry_type.value,
+        component_name=entry.component_name,
+        component_version=entry.component_version,
+        status=entry.status.value,
+        input_references_json=json.dumps([row.deterministic_dict() for row in entry.input_references], sort_keys=True),
+        output_references_json=json.dumps([row.deterministic_dict() for row in entry.output_references], sort_keys=True),
+        rule_evaluations_json=json.dumps([row.deterministic_dict() for row in entry.rule_evaluations], sort_keys=True),
+        numeric_outputs_json=json.dumps(entry.numeric_outputs, sort_keys=True),
+        categorical_outputs_json=json.dumps(entry.categorical_outputs, sort_keys=True),
+        warning_codes_json=json.dumps(list(entry.warning_codes), sort_keys=True),
+        created_at=entry.created_at.isoformat(),
+    )
+
+
+def trace_entry_from_row(row: RecommendationTraceEntryEntity) -> TraceEntry:
+    input_references = tuple(
+        ComponentResultReference(
+            reference_type=item["reference_type"],
+            reference_id=item["reference_id"],
+            source=item["source"],
+        )
+        for item in json.loads(row.input_references_json)
+    )
+    output_references = tuple(
+        ComponentResultReference(
+            reference_type=item["reference_type"],
+            reference_id=item["reference_id"],
+            source=item["source"],
+        )
+        for item in json.loads(row.output_references_json)
+    )
+    rule_evaluations = tuple(
+        RuleEvaluation(
+            rule_id=item["rule_id"],
+            rule_version=item["rule_version"],
+            rule_name=item["rule_name"],
+            result=RuleResult(item["result"]),
+            observed_value=item["observed_value"],
+            comparison_operator=item["comparison_operator"],
+            threshold_value=item["threshold_value"],
+            reason_code=item["reason_code"],
+            severity=RuleSeverity(item["severity"]),
+            source_reference=item["source_reference"],
+        )
+        for item in json.loads(row.rule_evaluations_json)
+    )
+    return TraceEntry(
+        entry_id=row.entry_id,
+        trace_id=row.trace_id,
+        sequence_number=row.sequence_number,
+        entry_type=TraceEntryType(row.entry_type),
+        component_name=row.component_name,
+        component_version=row.component_version,
+        status=TraceEntryStatus(row.status),
+        input_references=input_references,
+        output_references=output_references,
+        rule_evaluations=rule_evaluations,
+        numeric_outputs={key: float(value) for key, value in json.loads(row.numeric_outputs_json).items()},
+        categorical_outputs={key: str(value) for key, value in json.loads(row.categorical_outputs_json).items()},
+        warning_codes=tuple(str(value) for value in json.loads(row.warning_codes_json)),
+        created_at=_parse_dt(row.created_at),
     )
 
 

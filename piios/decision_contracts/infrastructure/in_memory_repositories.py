@@ -9,6 +9,7 @@ from piios.decision_contracts.domain.proposal import (
     RecommendationProposalVersion,
     RecommendationReason,
 )
+from piios.decision_contracts.domain.recommendation_trace import RecommendationTrace, TraceEntry
 from piios.decision_contracts.infrastructure.repository_protocols import (
     InvestmentDecisionRepositoryProtocol,
     RecommendationProposalRepositoryProtocol,
@@ -90,6 +91,9 @@ class InMemoryInvestmentDecisionRepository(InvestmentDecisionRepositoryProtocol)
         rows.sort(key=lambda row: (row.decided_at, row.decision_id))
         return decision
 
+    def get(self, decision_id: str) -> InvestmentDecision | None:
+        return self._by_id.get(decision_id)
+
     def list_for_proposal_version(self, proposal_version_id: str) -> list[InvestmentDecision]:
         return list(self._by_version.get(proposal_version_id, []))
 
@@ -100,8 +104,54 @@ class InMemoryInvestmentDecisionRepository(InvestmentDecisionRepositoryProtocol)
 
 class InMemoryRecommendationTraceRepository(RecommendationTraceRepositoryProtocol):
     def __init__(self) -> None:
+        self._traces: dict[str, RecommendationTrace] = {}
+        self._trace_by_proposal_version: dict[str, str] = {}
+        self._trace_by_execution_identity: dict[str, str] = {}
+        self._entries_by_trace_id: dict[str, list[TraceEntry]] = {}
         self._claim_links: dict[str, RecommendationClaimLink] = {}
         self._evidence_links: dict[str, RecommendationEvidenceLink] = {}
+
+    def create_trace(self, trace: RecommendationTrace) -> RecommendationTrace:
+        return self.create_trace_uncommitted(trace)
+
+    def create_trace_uncommitted(self, trace: RecommendationTrace) -> RecommendationTrace:
+        if trace.trace_id in self._traces:
+            raise ValueError(f"trace_id already exists: {trace.trace_id}")
+        if trace.proposal_version_id in self._trace_by_proposal_version:
+            raise ValueError(
+                f"proposal_version_id already has authoritative trace: {trace.proposal_version_id}"
+            )
+        if trace.execution_identity in self._trace_by_execution_identity:
+            raise ValueError(f"execution_identity already exists: {trace.execution_identity}")
+
+        self._traces[trace.trace_id] = trace
+        self._trace_by_proposal_version[trace.proposal_version_id] = trace.trace_id
+        self._trace_by_execution_identity[trace.execution_identity] = trace.trace_id
+        self._entries_by_trace_id[trace.trace_id] = list(trace.entries)
+        return trace
+
+    def get_trace(self, trace_id: str) -> RecommendationTrace | None:
+        return self._traces.get(trace_id)
+
+    def get_trace_for_proposal_version(self, proposal_version_id: str) -> RecommendationTrace | None:
+        trace_id = self._trace_by_proposal_version.get(proposal_version_id)
+        if trace_id is None:
+            return None
+        return self._traces.get(trace_id)
+
+    def get_trace_for_execution_identity(self, execution_identity: str) -> RecommendationTrace | None:
+        trace_id = self._trace_by_execution_identity.get(execution_identity)
+        if trace_id is None:
+            return None
+        return self._traces.get(trace_id)
+
+    def list_entries(self, trace_id: str) -> list[TraceEntry]:
+        rows = list(self._entries_by_trace_id.get(trace_id, []))
+        rows.sort(key=lambda row: (row.sequence_number, row.entry_id))
+        return rows
+
+    def trace_exists_for_execution_identity(self, execution_identity: str) -> bool:
+        return execution_identity in self._trace_by_execution_identity
 
     def create_claim_links(self, links: tuple[RecommendationClaimLink, ...]) -> tuple[RecommendationClaimLink, ...]:
         return self.create_claim_links_uncommitted(links)
