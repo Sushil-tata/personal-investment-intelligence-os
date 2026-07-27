@@ -18,7 +18,15 @@ from piios.decision_contracts.application.strategies import (
     WeightedRecommendationStrategy,
     default_recommendation_strategies,
 )
-from piios.decision_contracts.domain.enums import ProposalStatus, ReasonType
+from piios.decision_contracts.domain.enums import (
+    ProposalStatus,
+    ReasonType,
+    RuleResult,
+    RuleSeverity,
+    TraceEntryStatus,
+    TraceEntryType,
+    TraceExecutionStatus,
+)
 from piios.decision_contracts.domain.proposal import (
     RecommendationClaimLink,
     RecommendationEvidenceLink,
@@ -26,6 +34,12 @@ from piios.decision_contracts.domain.proposal import (
     RecommendationProposal,
     RecommendationProposalVersion,
     RecommendationReason,
+)
+from piios.decision_contracts.domain.recommendation_trace import (
+    ComponentResultReference,
+    RecommendationTrace,
+    RuleEvaluation,
+    TraceEntry,
 )
 from piios.decision_contracts.domain.value_objects import (
     ActionProposal,
@@ -87,6 +101,7 @@ class RecommendationGenerationResult:
     claim_links: tuple[RecommendationClaimLink, ...]
     evidence_links: tuple[RecommendationEvidenceLink, ...]
     evaluation: RecommendationEvaluation
+    recommendation_trace: RecommendationTrace | None = None
 
 
 class RecommendationDecisionEngine:
@@ -101,6 +116,9 @@ class RecommendationDecisionEngine:
         strategies: dict[str, WeightedRecommendationStrategy] | None = None,
         default_strategy_key: str = "balanced-v1",
         engine_version: str = "wave2b-m3-v1",
+        policy_version: str = "policy-wave2b-v1",
+        trace_schema_version: str = "wave2b-trace-v1",
+        engine_name: str = "RecommendationDecisionEngine",
     ) -> None:
         self._proposal_repository = proposal_repository
         self._version_repository = version_repository
@@ -111,6 +129,9 @@ class RecommendationDecisionEngine:
         self._strategies = strategies or default_recommendation_strategies()
         self._default_strategy_key = default_strategy_key
         self._engine_version = engine_version
+        self._policy_version = policy_version
+        self._trace_schema_version = trace_schema_version
+        self._engine_name = engine_name
 
     def evaluate(self, data: RecommendationEngineInput) -> RecommendationEvaluation:
         scores = tuple(component.score(data) for component in self._scoring_components)
@@ -178,6 +199,9 @@ class RecommendationDecisionEngine:
                 input_hash=evaluation.trace.input_hash,
             )
             if existing_version is not None and existing_snapshot is not None:
+                existing_trace = self._trace_repository.get_trace_for_proposal_version(
+                    existing_version.proposal_version_id
+                )
                 return RecommendationGenerationResult(
                     proposal=proposal,
                     proposal_version=existing_version,
@@ -186,6 +210,7 @@ class RecommendationDecisionEngine:
                     claim_links=tuple(self._trace_repository.list_claim_links(existing_version.proposal_version_id)),
                     evidence_links=tuple(self._trace_repository.list_evidence_links(existing_version.proposal_version_id)),
                     evaluation=evaluation,
+                    recommendation_trace=existing_trace,
                 )
 
             latest = self._version_repository.get_latest(data.proposal_id)
@@ -242,6 +267,21 @@ class RecommendationDecisionEngine:
             if evidence_links:
                 self._trace_repository.create_evidence_links_uncommitted(evidence_links)
 
+            trace_record = _build_recommendation_trace(
+                data=data,
+                evaluation=evaluation,
+                proposal=proposal,
+                proposal_version=version,
+                snapshot=snapshot,
+                reasons=reasons,
+                engine_name=self._engine_name,
+                engine_version=self._engine_version,
+                policy_version=self._policy_version,
+                strategy_version=evaluation.strategy_result.strategy_key,
+                trace_schema_version=self._trace_schema_version,
+            )
+            self._trace_repository.create_trace_uncommitted(trace_record)
+
             self._proposal_repository.commit()
         except Exception:
             self._proposal_repository.rollback()
@@ -255,6 +295,7 @@ class RecommendationDecisionEngine:
             claim_links=claim_links,
             evidence_links=evidence_links,
             evaluation=evaluation,
+            recommendation_trace=trace_record,
         )
 
     def _find_existing_snapshot_by_hash(
@@ -717,3 +758,360 @@ def _quality_score(metadata_json: str) -> float:
     if value > 1.0:
         return 1.0
     return round(value, 6)
+
+
+def _build_recommendation_trace(
+    data: RecommendationEngineInput,
+    evaluation: RecommendationEvaluation,
+    proposal: RecommendationProposal,
+    proposal_version: RecommendationProposalVersion,
+    snapshot: RecommendationInputSnapshot,
+    reasons: tuple[RecommendationReason, ...],
+    engine_name: str,
+    engine_version: str,
+    policy_version: str,
+    strategy_version: str,
+    trace_schema_version: str,
+) -> RecommendationTrace:
+    execution_identity = (
+        f"{proposal.proposal_id}:{evaluation.trace.input_hash}:{engine_version}:{policy_version}:{strategy_version}"
+    )
+    trace_id = f"{proposal_version.proposal_version_id}:trace:{evaluation.trace.input_hash[:12]}"
+
+    entries: list[TraceEntry] = []
+    sequence = 1
+
+    def _add_entry(
+        entry_type: TraceEntryType,
+        component_name: str,
+        component_version: str,
+        status: TraceEntryStatus,
+        input_references: tuple[ComponentResultReference, ...],
+        output_references: tuple[ComponentResultReference, ...],
+        rule_evaluations: tuple[RuleEvaluation, ...],
+        numeric_outputs: dict[str, float],
+        categorical_outputs: dict[str, str],
+        warning_codes: tuple[str, ...],
+    ) -> None:
+        nonlocal sequence
+        entries.append(
+            TraceEntry(
+                entry_id=f"{trace_id}:e:{sequence:02d}",
+                trace_id=trace_id,
+                sequence_number=sequence,
+                entry_type=entry_type,
+                component_name=component_name,
+                component_version=component_version,
+                status=status,
+                input_references=input_references,
+                output_references=output_references,
+                rule_evaluations=rule_evaluations,
+                numeric_outputs=numeric_outputs,
+                categorical_outputs=categorical_outputs,
+                warning_codes=warning_codes,
+                created_at=proposal_version.created_at,
+            )
+        )
+        sequence += 1
+
+    snapshot_ref = ComponentResultReference(
+        reference_type="RecommendationInputSnapshot",
+        reference_id=snapshot.snapshot_id,
+        source="decision_recommendation_input_snapshots",
+    )
+    proposal_ref = ComponentResultReference(
+        reference_type="RecommendationProposalVersion",
+        reference_id=proposal_version.proposal_version_id,
+        source="decision_recommendation_proposal_versions",
+    )
+
+    _add_entry(
+        entry_type=TraceEntryType.INPUT_SNAPSHOT_REFERENCE,
+        component_name="input_snapshot",
+        component_version="v1",
+        status=TraceEntryStatus.APPLIED,
+        input_references=tuple(),
+        output_references=(snapshot_ref,),
+        rule_evaluations=tuple(),
+        numeric_outputs={},
+        categorical_outputs={"input_hash": snapshot.input_hash},
+        warning_codes=tuple(),
+    )
+
+    hs = data.thesis_health_snapshot
+    _add_entry(
+        entry_type=TraceEntryType.THESIS_HEALTH_INPUT,
+        component_name="thesis_health",
+        component_version=hs.computation_version,
+        status=TraceEntryStatus.APPLIED,
+        input_references=(snapshot_ref,),
+        output_references=tuple(),
+        rule_evaluations=tuple(),
+        numeric_outputs={
+            "evidence_freshness": hs.evidence_freshness,
+            "evidence_quality": hs.evidence_quality,
+            "supporting_strength": hs.supporting_strength,
+            "contradictory_strength": hs.contradictory_strength,
+            "provenance_completeness": hs.provenance_completeness,
+            "thesis_health_index": hs.thesis_health_index,
+        },
+        categorical_outputs={"thesis_version_id": hs.thesis_version_id},
+        warning_codes=tuple(),
+    )
+
+    ctx = data.portfolio_context
+    _add_entry(
+        entry_type=TraceEntryType.PORTFOLIO_SUITABILITY_INPUT,
+        component_name="portfolio_context",
+        component_version="v1",
+        status=TraceEntryStatus.APPLIED,
+        input_references=(snapshot_ref,),
+        output_references=tuple(),
+        rule_evaluations=tuple(),
+        numeric_outputs={
+            "current_weight": ctx.current_weight,
+            "target_weight": ctx.target_weight,
+            "max_position_weight": ctx.max_position_weight,
+            "concentration_risk": ctx.concentration_risk,
+            "liquidity_risk": ctx.liquidity_risk,
+            "portfolio_underweight_signal": ctx.portfolio_underweight_signal,
+            "opportunity_signal": ctx.opportunity_signal,
+            "valuation_signal": ctx.valuation_signal,
+            "expected_return_signal": ctx.expected_return_signal,
+            "relationship_signal": ctx.relationship_signal,
+        },
+        categorical_outputs={"has_existing_position": str(ctx.has_existing_position)},
+        warning_codes=tuple(),
+    )
+
+    warning_codes = tuple(
+        row.component_key.upper()
+        for row in evaluation.strategy_result.component_breakdown
+        if row.orientation == ComponentOrientation.PENALTY and row.value >= 0.45
+    )
+    _add_entry(
+        entry_type=TraceEntryType.RISK_WARNING_EVALUATION,
+        component_name="risk_warning_evaluator",
+        component_version="v1",
+        status=TraceEntryStatus.APPLIED,
+        input_references=(snapshot_ref,),
+        output_references=tuple(),
+        rule_evaluations=tuple(),
+        numeric_outputs={
+            "penalty_count": float(len(warning_codes)),
+        },
+        categorical_outputs={"required_human_review": str(evaluation.strategy_result.required_human_review)},
+        warning_codes=warning_codes,
+    )
+
+    parsed_rules = tuple(_parse_applied_rule(rule, strategy_version) for rule in evaluation.strategy_result.applied_rules)
+    _add_entry(
+        entry_type=TraceEntryType.STRATEGY_EVALUATION,
+        component_name="weighted_strategy",
+        component_version=strategy_version,
+        status=TraceEntryStatus.APPLIED,
+        input_references=(snapshot_ref,),
+        output_references=tuple(),
+        rule_evaluations=parsed_rules,
+        numeric_outputs={"overall_score": evaluation.strategy_result.overall_score},
+        categorical_outputs={"strategy_key": evaluation.strategy_result.strategy_key},
+        warning_codes=tuple(),
+    )
+
+    for component_row in sorted(evaluation.component_scores, key=lambda row: row.component_key):
+        _add_entry(
+            entry_type=TraceEntryType.SCORING_COMPONENT_RESULT,
+            component_name=component_row.component_key,
+            component_version="v1",
+            status=TraceEntryStatus.APPLIED,
+            input_references=(snapshot_ref,),
+            output_references=tuple(),
+            rule_evaluations=tuple(),
+            numeric_outputs={"value": component_row.value},
+            categorical_outputs={
+                "orientation": component_row.orientation.value,
+                "reason_code": component_row.reason_code,
+            },
+            warning_codes=tuple(),
+        )
+
+    dims = evaluation.confidence_breakdown.dimensions
+    _add_entry(
+        entry_type=TraceEntryType.CONFIDENCE_COMPONENT_RESULT,
+        component_name="confidence_breakdown",
+        component_version="v1",
+        status=TraceEntryStatus.APPLIED,
+        input_references=(snapshot_ref,),
+        output_references=tuple(),
+        rule_evaluations=tuple(),
+        numeric_outputs={
+            "company_quality": dims.company_quality,
+            "valuation_attractiveness": dims.valuation_attractiveness,
+            "portfolio_suitability": dims.portfolio_suitability,
+            "recommendation_confidence": dims.recommendation_confidence,
+            "relationship_confidence": dims.relationship_confidence,
+            "expected_return": dims.expected_return,
+            "overall_confidence": evaluation.confidence_breakdown.overall_confidence,
+        },
+        categorical_outputs={"confidence_label": evaluation.strategy_result.confidence_label},
+        warning_codes=tuple(),
+    )
+
+    _add_entry(
+        entry_type=TraceEntryType.ACTION_SELECTION,
+        component_name="action_selector",
+        component_version=strategy_version,
+        status=TraceEntryStatus.APPLIED,
+        input_references=(snapshot_ref,),
+        output_references=(proposal_ref,),
+        rule_evaluations=tuple(),
+        numeric_outputs={"score": evaluation.strategy_result.overall_score},
+        categorical_outputs={
+            "action": proposal_version.action_proposal.action.value,
+            "priority": proposal_version.priority.level.value,
+        },
+        warning_codes=warning_codes,
+    )
+
+    if proposal_version.action_proposal.position_size_range is None:
+        _add_entry(
+            entry_type=TraceEntryType.POSITION_SIZE_RANGE_DERIVATION,
+            component_name="position_sizing",
+            component_version="v1",
+            status=TraceEntryStatus.SKIPPED,
+            input_references=(proposal_ref,),
+            output_references=tuple(),
+            rule_evaluations=tuple(),
+            numeric_outputs={},
+            categorical_outputs={"reason": "action_without_position_size"},
+            warning_codes=tuple(),
+        )
+    else:
+        size = proposal_version.action_proposal.position_size_range
+        _add_entry(
+            entry_type=TraceEntryType.POSITION_SIZE_RANGE_DERIVATION,
+            component_name="position_sizing",
+            component_version="v1",
+            status=TraceEntryStatus.APPLIED,
+            input_references=(proposal_ref,),
+            output_references=tuple(),
+            rule_evaluations=tuple(),
+            numeric_outputs={"min_weight": size.min_weight, "max_weight": size.max_weight},
+            categorical_outputs={"action": proposal_version.action_proposal.action.value},
+            warning_codes=tuple(),
+        )
+
+    review_considerations = ()
+    if proposal_version.required_human_review:
+        review_considerations = (
+            ComponentResultReference(
+                reference_type="ExecutionConsideration",
+                reference_id=f"{proposal_version.proposal_version_id}:human-review",
+                source="derived",
+            ),
+        )
+    _add_entry(
+        entry_type=TraceEntryType.EXECUTION_CONSIDERATION_DERIVATION,
+        component_name="execution_considerations",
+        component_version="v1",
+        status=TraceEntryStatus.APPLIED,
+        input_references=(proposal_ref,),
+        output_references=review_considerations,
+        rule_evaluations=tuple(),
+        numeric_outputs={"consideration_count": float(len(review_considerations))},
+        categorical_outputs={"required_human_review": str(proposal_version.required_human_review)},
+        warning_codes=tuple(),
+    )
+
+    monitoring_refs = ()
+    monitoring_codes: list[str] = []
+    if hs.evidence_freshness < 0.25:
+        monitoring_codes.append("EVIDENCE_STALENESS")
+        monitoring_refs = (
+            ComponentResultReference(
+                reference_type="MonitoringTrigger",
+                reference_id=f"{proposal_version.proposal_version_id}:evidence-staleness",
+                source="derived",
+            ),
+        )
+    _add_entry(
+        entry_type=TraceEntryType.MONITORING_TRIGGER_DERIVATION,
+        component_name="monitoring_triggers",
+        component_version="v1",
+        status=TraceEntryStatus.APPLIED,
+        input_references=(snapshot_ref,),
+        output_references=monitoring_refs,
+        rule_evaluations=tuple(),
+        numeric_outputs={"trigger_count": float(len(monitoring_refs))},
+        categorical_outputs={"freshness_band": "LOW" if hs.evidence_freshness < 0.25 else "NORMAL"},
+        warning_codes=tuple(monitoring_codes),
+    )
+
+    _add_entry(
+        entry_type=TraceEntryType.FINAL_PROPOSAL_ASSEMBLY,
+        component_name="proposal_assembly",
+        component_version="v1",
+        status=TraceEntryStatus.APPLIED,
+        input_references=(snapshot_ref,),
+        output_references=(proposal_ref,),
+        rule_evaluations=tuple(),
+        numeric_outputs={"reason_count": float(len(reasons))},
+        categorical_outputs={
+            "proposal_id": proposal.proposal_id,
+            "proposal_version_id": proposal_version.proposal_version_id,
+            "execution_identity": execution_identity,
+        },
+        warning_codes=tuple(),
+    )
+
+    _add_entry(
+        entry_type=TraceEntryType.VALIDATION_RESULT,
+        component_name="trace_validation",
+        component_version="v1",
+        status=TraceEntryStatus.APPLIED,
+        input_references=(proposal_ref,),
+        output_references=tuple(),
+        rule_evaluations=tuple(),
+        numeric_outputs={"entry_count": float(len(entries) + 1)},
+        categorical_outputs={"input_hash": snapshot.input_hash, "status": "VALID"},
+        warning_codes=tuple(),
+    )
+
+    return RecommendationTrace(
+        trace_id=trace_id,
+        proposal_id=proposal.proposal_id,
+        proposal_version_id=proposal_version.proposal_version_id,
+        input_snapshot_id=snapshot.snapshot_id,
+        engine_name=engine_name,
+        engine_version=engine_version,
+        policy_version=policy_version,
+        strategy_version=strategy_version,
+        execution_identity=execution_identity,
+        computation_started_at=data.generated_at,
+        computation_completed_at=proposal_version.created_at,
+        trace_schema_version=trace_schema_version,
+        execution_status=TraceExecutionStatus.COMPLETED,
+        is_authoritative=True,
+        entries=tuple(entries),
+        created_at=proposal_version.created_at,
+    )
+
+
+def _parse_applied_rule(rule: str, strategy_version: str) -> RuleEvaluation:
+    key, _, raw_value = rule.partition("=")
+    observed = raw_value.strip() if raw_value else "n/a"
+    severity = RuleSeverity.INFO
+    if key == "required_human_review" and observed == "True":
+        severity = RuleSeverity.WARNING
+    return RuleEvaluation(
+        rule_id=f"strategy.{key}",
+        rule_version=strategy_version,
+        rule_name=key,
+        result=RuleResult.PASSED,
+        observed_value=observed,
+        comparison_operator="=",
+        threshold_value="configured",
+        reason_code=f"RULE_{key.upper()}",
+        severity=severity,
+        source_reference="strategy.applied_rules",
+    )
