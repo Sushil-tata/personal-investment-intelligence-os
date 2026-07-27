@@ -24,3 +24,9 @@
 - backtesting suite
 - workflow parallelization and committee style review
 - advanced risk analytics
+
+## Repository Hygiene Debt (Non-Blocking)
+- `pip install -e backend` does not currently install `pytest`.
+- Clean-clone setup currently requires a separate manual `pytest` installation.
+- `backend/piios_backend.egg-info/SOURCES.txt` is tracked generated metadata and changes during editable installation.
+- Preferred future improvement is repository-managed development dependency installation (for example, a `dev` optional dependency group or equivalent).

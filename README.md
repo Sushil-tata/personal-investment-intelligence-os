@@ -102,6 +102,26 @@ cd backend
 pytest
 ```
 
+## Developer Setup Notes
+
+Current clean-clone setup that is known to work from repository root:
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e backend
+python -m pip install pytest
+```
+
+Notes:
+- `pip install -e backend` currently does not install `pytest`.
+- A separate `pytest` installation is currently required for test execution in a fresh clone.
+- `backend/piios_backend.egg-info/SOURCES.txt` is tracked generated metadata and may change during editable install.
+
+Preferred future improvement:
+- Adopt repository-managed development dependencies (for example, a `dev` optional dependency group or equivalent) so test tooling is installed consistently with one setup command.
+
 ## Wave 2B Reproducible Gate
 
 Run the full milestone acceptance sequence from the repository root:
