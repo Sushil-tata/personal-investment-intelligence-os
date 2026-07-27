@@ -16,6 +16,7 @@ from piios_backend.core.config import settings
 
 REVISION_WAVE2A3 = "0007_claims_evidence_provenance"
 REVISION_WAVE2A2 = "0006_thesis_versioned_domain"
+REVISION_HEAD = "head"
 
 
 def _alembic_config(db_url: str) -> Config:
@@ -31,7 +32,11 @@ def pg_engine():
     config = _alembic_config(settings.db_url)
     command.upgrade(config, REVISION_WAVE2A3)
     engine = create_engine(settings.db_url)
-    return engine
+    try:
+        yield engine
+    finally:
+        # Restore shared test DB to head so later modules are independent of execution order.
+        command.upgrade(config, REVISION_HEAD)
 
 
 def _seed_thesis_root_and_version(conn: sa.Connection, thesis_id: str) -> str:

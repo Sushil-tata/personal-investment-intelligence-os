@@ -5,6 +5,9 @@ import uuid
 
 import pytest
 import sqlalchemy as sa
+from alembic import command
+from alembic.config import Config
+from pathlib import Path
 from sqlmodel import Session, create_engine
 
 from piios.decision_contracts.domain.decision import InvestmentDecision
@@ -41,6 +44,30 @@ from piios.decision_contracts.infrastructure.sqlmodel_repositories import (
 from piios.thesis_health.domain.entities import ThesisHealthSnapshot
 from piios.thesis_health.infrastructure.sqlmodel_repositories import SQLModelThesisHealthRepository
 from piios_backend.core.config import settings
+
+
+REVISION_WAVE2B_M2 = "0008_wave2b_m2_sqlmodel_persist"
+REVISION_HEAD = "head"
+
+
+def _alembic_config(db_url: str) -> Config:
+    backend_root = Path(__file__).resolve().parents[1]
+    config = Config(str(backend_root / "alembic.ini"))
+    config.set_main_option("script_location", str(backend_root / "alembic"))
+    config.set_main_option("sqlalchemy.url", db_url)
+    return config
+
+
+@pytest.fixture(scope="module")
+def pg_engine():
+    config = _alembic_config(settings.db_url)
+    command.upgrade(config, REVISION_WAVE2B_M2)
+    engine = create_engine(settings.db_url)
+    try:
+        yield engine
+    finally:
+        # Restore shared DB to head to avoid leaking schema state across modules.
+        command.upgrade(config, REVISION_HEAD)
 
 
 def _seed_claim_evidence_context(conn: sa.Connection, suffix: str) -> tuple[str, str, str]:
@@ -166,8 +193,8 @@ def _confidence() -> ConfidenceBreakdown:
     )
 
 
-def test_wave2b_m2_postgres_persistence_and_ordering() -> None:
-    engine = create_engine(settings.db_url)
+def test_wave2b_m2_postgres_persistence_and_ordering(pg_engine) -> None:
+    engine = pg_engine
     suffix = uuid.uuid4().hex[:8]
 
     with engine.begin() as conn:
@@ -330,8 +357,8 @@ def test_wave2b_m2_postgres_persistence_and_ordering() -> None:
         assert health_repo.get_latest(thesis_version_id) is not None
 
 
-def test_wave2b_m2_postgres_duplicate_rejection_and_rollback() -> None:
-    engine = create_engine(settings.db_url)
+def test_wave2b_m2_postgres_duplicate_rejection_and_rollback(pg_engine) -> None:
+    engine = pg_engine
     suffix = uuid.uuid4().hex[:8]
 
     with Session(engine) as session:
@@ -364,8 +391,8 @@ def test_wave2b_m2_postgres_duplicate_rejection_and_rollback() -> None:
         assert proposal_repo.get(f"p_dup_ok_{suffix}") is not None
 
 
-def test_wave2b_m2_postgres_concurrent_write_conflict() -> None:
-    engine = create_engine(settings.db_url)
+def test_wave2b_m2_postgres_concurrent_write_conflict(pg_engine) -> None:
+    engine = pg_engine
     suffix = uuid.uuid4().hex[:8]
     proposal_id = f"p_conc_{suffix}"
 
