@@ -102,6 +102,21 @@ cd backend
 pytest
 ```
 
+## Wave 2B Reproducible Gate
+
+Run the full milestone acceptance sequence from the repository root:
+
+```bash
+bash scripts/wave2b_reproducible_test_gate.sh
+```
+
+This gate executes, in order:
+- Wave 2B M1 domain contracts
+- Wave 2B M2 persistence
+- Wave 2B M3 deterministic decision engine
+- Wave 2A.3 documented gate
+- Full backend plus piios test suite
+
 ## Phase 1.5 upgrades included
 
 - yfinance adapter plus extension interfaces for Polygon, Alpha Vantage, FMP, Tiingo
