@@ -6,12 +6,18 @@ from .domain.enums import (
     OpportunityType,
     Priority,
     ProposalStatus,
+    RuleResult,
+    RuleSeverity,
     ReasonType,
     RecommendationAction,
     RelationshipClass,
     RelationshipType,
     RiskSeverity,
+    TraceEntryStatus,
+    TraceEntryType,
+    TraceExecutionStatus,
 )
+from .domain.explanation_projection import RecommendationExplanation
 from .domain.proposal import (
     RecommendationClaimLink,
     RecommendationEvidenceLink,
@@ -23,6 +29,7 @@ from .domain.proposal import (
     RecommendationReason,
     RecommendationRiskWarning,
 )
+from .domain.recommendation_trace import ComponentResultReference, RecommendationTrace, RuleEvaluation, TraceEntry
 from .domain.value_objects import (
     ActionProposal,
     ConfidenceBreakdown,
@@ -68,6 +75,11 @@ __all__ = [
     "RecommendationClaimLink",
     "RecommendationEvidenceLink",
     "RecommendationRiskWarning",
+    "RecommendationTrace",
+    "TraceEntry",
+    "RuleEvaluation",
+    "ComponentResultReference",
+    "RecommendationExplanation",
     "RecommendationExecutionConsideration",
     "RecommendationMonitoringTrigger",
     "InvestmentDecision",
@@ -85,6 +97,11 @@ __all__ = [
     "DecisionState",
     "RecommendationAction",
     "ReasonType",
+    "TraceExecutionStatus",
+    "TraceEntryType",
+    "TraceEntryStatus",
+    "RuleResult",
+    "RuleSeverity",
     "RiskSeverity",
     "MonitoringTriggerType",
     "Priority",

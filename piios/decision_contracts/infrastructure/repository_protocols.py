@@ -11,6 +11,7 @@ from piios.decision_contracts.domain.proposal import (
     RecommendationProposalVersion,
     RecommendationReason,
 )
+from piios.decision_contracts.domain.recommendation_trace import RecommendationTrace, TraceEntry
 
 
 class RecommendationProposalRepositoryProtocol(Protocol):
@@ -51,6 +52,9 @@ class InvestmentDecisionRepositoryProtocol(Protocol):
     def create(self, decision: InvestmentDecision) -> InvestmentDecision:
         ...
 
+    def get(self, decision_id: str) -> InvestmentDecision | None:
+        ...
+
     def list_for_proposal_version(self, proposal_version_id: str) -> list[InvestmentDecision]:
         ...
 
@@ -59,6 +63,27 @@ class InvestmentDecisionRepositoryProtocol(Protocol):
 
 
 class RecommendationTraceRepositoryProtocol(Protocol):
+    def create_trace(self, trace: RecommendationTrace) -> RecommendationTrace:
+        ...
+
+    def create_trace_uncommitted(self, trace: RecommendationTrace) -> RecommendationTrace:
+        ...
+
+    def get_trace(self, trace_id: str) -> RecommendationTrace | None:
+        ...
+
+    def get_trace_for_proposal_version(self, proposal_version_id: str) -> RecommendationTrace | None:
+        ...
+
+    def get_trace_for_execution_identity(self, execution_identity: str) -> RecommendationTrace | None:
+        ...
+
+    def list_entries(self, trace_id: str) -> list[TraceEntry]:
+        ...
+
+    def trace_exists_for_execution_identity(self, execution_identity: str) -> bool:
+        ...
+
     def create_claim_links(self, links: tuple[RecommendationClaimLink, ...]) -> tuple[RecommendationClaimLink, ...]:
         ...
 
