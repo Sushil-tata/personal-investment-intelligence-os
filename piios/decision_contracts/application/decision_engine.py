@@ -172,6 +172,21 @@ class RecommendationDecisionEngine:
                 )
             )
 
+        existing_version, existing_snapshot = self._find_existing_snapshot_by_hash(
+            proposal_id=data.proposal_id,
+            input_hash=evaluation.trace.input_hash,
+        )
+        if existing_version is not None and existing_snapshot is not None:
+            return RecommendationGenerationResult(
+                proposal=proposal,
+                proposal_version=existing_version,
+                input_snapshot=existing_snapshot,
+                reasons=tuple(self._reason_repository.list_for_proposal_version(existing_version.proposal_version_id)),
+                claim_links=tuple(self._trace_repository.list_claim_links(existing_version.proposal_version_id)),
+                evidence_links=tuple(self._trace_repository.list_evidence_links(existing_version.proposal_version_id)),
+                evaluation=evaluation,
+            )
+
         latest = self._version_repository.get_latest(data.proposal_id)
         version_number = (latest.version_number + 1) if latest else 1
         proposal_version_id = f"{data.proposal_id}:v{version_number}"
@@ -235,6 +250,20 @@ class RecommendationDecisionEngine:
             evidence_links=evidence_links,
             evaluation=evaluation,
         )
+
+    def _find_existing_snapshot_by_hash(
+        self,
+        proposal_id: str,
+        input_hash: str,
+    ) -> tuple[RecommendationProposalVersion | None, RecommendationInputSnapshot | None]:
+        versions = self._version_repository.list_for_proposal(proposal_id)
+        for version in reversed(versions):
+            snapshot = self._snapshot_repository.get_for_proposal_version(version.proposal_version_id)
+            if snapshot is None:
+                continue
+            if snapshot.input_hash == input_hash:
+                return version, snapshot
+        return None, None
 
     def _resolve_strategy(self, strategy_key: str) -> WeightedRecommendationStrategy:
         strategy = self._strategies.get(strategy_key)

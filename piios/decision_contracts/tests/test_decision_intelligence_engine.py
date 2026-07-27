@@ -29,6 +29,22 @@ def _build_engine() -> RecommendationDecisionEngine:
     )
 
 
+def _build_engine_with_repos():
+    proposal_repo = InMemoryRecommendationProposalRepository()
+    version_repo = InMemoryRecommendationProposalVersionRepository()
+    snapshot_repo = InMemoryRecommendationSnapshotRepository()
+    reason_repo = InMemoryRecommendationReasonRepository()
+    trace_repo = InMemoryRecommendationTraceRepository()
+    engine = RecommendationDecisionEngine(
+        proposal_repository=proposal_repo,
+        version_repository=version_repo,
+        snapshot_repository=snapshot_repo,
+        reason_repository=reason_repo,
+        trace_repository=trace_repo,
+    )
+    return engine, proposal_repo, version_repo, snapshot_repo, reason_repo, trace_repo
+
+
 def _build_input(strategy_key: str = "balanced-v1") -> RecommendationEngineInput:
     now = datetime(2026, 7, 27, 9, 30, tzinfo=timezone.utc)
 
@@ -317,3 +333,24 @@ def test_engine_trace_hash_normalizes_equivalent_timestamps_and_metadata_order()
     second = engine.evaluate(utc_with_reordered_metadata)
 
     assert first.trace.input_hash == second.trace.input_hash
+
+
+def test_engine_generate_recommendation_is_idempotent_by_input_hash() -> None:
+    engine, _, version_repo, snapshot_repo, reason_repo, trace_repo = _build_engine_with_repos()
+    data = _build_input(strategy_key="balanced-v1")
+
+    first = engine.generate_recommendation(data)
+    second = engine.generate_recommendation(data)
+
+    assert first.proposal_version.proposal_version_id == second.proposal_version.proposal_version_id
+    assert first.input_snapshot.snapshot_id == second.input_snapshot.snapshot_id
+    assert second.proposal_version.version_number == 1
+    assert len(version_repo.list_for_proposal(data.proposal_id)) == 1
+
+    snapshot = snapshot_repo.get_for_proposal_version(first.proposal_version.proposal_version_id)
+    assert snapshot is not None
+    assert snapshot.input_hash == first.evaluation.trace.input_hash
+
+    assert reason_repo.list_for_proposal_version(first.proposal_version.proposal_version_id)
+    assert trace_repo.list_claim_links(first.proposal_version.proposal_version_id)
+    assert trace_repo.list_evidence_links(first.proposal_version.proposal_version_id)
