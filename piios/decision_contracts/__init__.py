@@ -43,6 +43,14 @@ from .infrastructure.in_memory_repositories import (
     InMemoryRecommendationSnapshotRepository,
     InMemoryRecommendationTraceRepository,
 )
+from .infrastructure.sqlmodel_repositories import (
+    SQLModelInvestmentDecisionRepository,
+    SQLModelRecommendationProposalRepository,
+    SQLModelRecommendationProposalVersionRepository,
+    SQLModelRecommendationReasonRepository,
+    SQLModelRecommendationSnapshotRepository,
+    SQLModelRecommendationTraceRepository,
+)
 from .infrastructure.repository_protocols import (
     InvestmentDecisionRepositoryProtocol,
     RecommendationProposalRepositoryProtocol,
@@ -96,4 +104,10 @@ __all__ = [
     "InMemoryRecommendationTraceRepository",
     "InMemoryRecommendationReasonRepository",
     "InMemoryRecommendationSnapshotRepository",
+    "SQLModelRecommendationProposalRepository",
+    "SQLModelRecommendationProposalVersionRepository",
+    "SQLModelInvestmentDecisionRepository",
+    "SQLModelRecommendationTraceRepository",
+    "SQLModelRecommendationReasonRepository",
+    "SQLModelRecommendationSnapshotRepository",
 ]

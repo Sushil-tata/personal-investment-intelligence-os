@@ -14,6 +14,23 @@ from .repository_protocols import (
     RecommendationSnapshotRepositoryProtocol,
     RecommendationTraceRepositoryProtocol,
 )
+from .sqlmodel_entities import (
+    InvestmentDecisionEntity,
+    RecommendationClaimLinkEntity,
+    RecommendationEvidenceLinkEntity,
+    RecommendationInputSnapshotEntity,
+    RecommendationProposalEntity,
+    RecommendationProposalVersionEntity,
+    RecommendationReasonEntity,
+)
+from .sqlmodel_repositories import (
+    SQLModelInvestmentDecisionRepository,
+    SQLModelRecommendationProposalRepository,
+    SQLModelRecommendationProposalVersionRepository,
+    SQLModelRecommendationReasonRepository,
+    SQLModelRecommendationSnapshotRepository,
+    SQLModelRecommendationTraceRepository,
+)
 
 __all__ = [
     "RecommendationProposalRepositoryProtocol",
@@ -28,4 +45,17 @@ __all__ = [
     "InMemoryRecommendationTraceRepository",
     "InMemoryRecommendationReasonRepository",
     "InMemoryRecommendationSnapshotRepository",
+    "SQLModelRecommendationProposalRepository",
+    "SQLModelRecommendationProposalVersionRepository",
+    "SQLModelInvestmentDecisionRepository",
+    "SQLModelRecommendationTraceRepository",
+    "SQLModelRecommendationReasonRepository",
+    "SQLModelRecommendationSnapshotRepository",
+    "RecommendationProposalEntity",
+    "RecommendationProposalVersionEntity",
+    "RecommendationInputSnapshotEntity",
+    "RecommendationReasonEntity",
+    "RecommendationClaimLinkEntity",
+    "RecommendationEvidenceLinkEntity",
+    "InvestmentDecisionEntity",
 ]

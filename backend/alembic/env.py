@@ -9,6 +9,8 @@ from sqlmodel import SQLModel
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from piios_backend.models import entities  # noqa: F401
+from piios.decision_contracts.infrastructure import sqlmodel_entities as decision_sqlmodel_entities  # noqa: F401
+from piios.thesis_health.infrastructure import sqlmodel_entities as thesis_health_sqlmodel_entities  # noqa: F401
 
 config = context.config
 
