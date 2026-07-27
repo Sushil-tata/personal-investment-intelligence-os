@@ -60,6 +60,21 @@ class SQLModelRecommendationProposalRepository(RecommendationProposalRepositoryP
             raise ValueError(f"proposal_id already exists: {proposal.proposal_id}") from exc
         return proposal
 
+    def create_uncommitted(self, proposal: RecommendationProposal) -> RecommendationProposal:
+        self._session.add(proposal_to_row(proposal))
+        try:
+            self._session.flush()
+        except IntegrityError as exc:
+            self._session.rollback()
+            raise ValueError(f"proposal_id already exists: {proposal.proposal_id}") from exc
+        return proposal
+
+    def commit(self) -> None:
+        self._session.commit()
+
+    def rollback(self) -> None:
+        self._session.rollback()
+
     def get(self, proposal_id: str) -> RecommendationProposal | None:
         row = self._session.exec(
             select(RecommendationProposalEntity).where(RecommendationProposalEntity.proposal_id == proposal_id)
@@ -75,6 +90,17 @@ class SQLModelRecommendationProposalVersionRepository(RecommendationProposalVers
         self._session.add(proposal_version_to_row(version))
         try:
             self._session.commit()
+        except IntegrityError as exc:
+            self._session.rollback()
+            raise ValueError(
+                "proposal_version duplicate on proposal_version_id, snapshot_id, or (proposal_id, version_number)"
+            ) from exc
+        return version
+
+    def create_uncommitted(self, version: RecommendationProposalVersion) -> RecommendationProposalVersion:
+        self._session.add(proposal_version_to_row(version))
+        try:
+            self._session.flush()
         except IntegrityError as exc:
             self._session.rollback()
             raise ValueError(
@@ -165,11 +191,37 @@ class SQLModelRecommendationTraceRepository(RecommendationTraceRepositoryProtoco
             raise ValueError("claim_link_id already exists") from exc
         return links
 
+    def create_claim_links_uncommitted(
+        self,
+        links: tuple[RecommendationClaimLink, ...],
+    ) -> tuple[RecommendationClaimLink, ...]:
+        for row in links:
+            self._session.add(claim_link_to_row(row))
+        try:
+            self._session.flush()
+        except IntegrityError as exc:
+            self._session.rollback()
+            raise ValueError("claim_link_id already exists") from exc
+        return links
+
     def create_evidence_links(self, links: tuple[RecommendationEvidenceLink, ...]) -> tuple[RecommendationEvidenceLink, ...]:
         for row in links:
             self._session.add(evidence_link_to_row(row))
         try:
             self._session.commit()
+        except IntegrityError as exc:
+            self._session.rollback()
+            raise ValueError("evidence_link_id already exists") from exc
+        return links
+
+    def create_evidence_links_uncommitted(
+        self,
+        links: tuple[RecommendationEvidenceLink, ...],
+    ) -> tuple[RecommendationEvidenceLink, ...]:
+        for row in links:
+            self._session.add(evidence_link_to_row(row))
+        try:
+            self._session.flush()
         except IntegrityError as exc:
             self._session.rollback()
             raise ValueError("evidence_link_id already exists") from exc
@@ -206,6 +258,16 @@ class SQLModelRecommendationReasonRepository(RecommendationReasonRepositoryProto
             raise ValueError("reason_id already exists") from exc
         return reasons
 
+    def create_many_uncommitted(self, reasons: tuple[RecommendationReason, ...]) -> tuple[RecommendationReason, ...]:
+        for row in reasons:
+            self._session.add(reason_to_row(row))
+        try:
+            self._session.flush()
+        except IntegrityError as exc:
+            self._session.rollback()
+            raise ValueError("reason_id already exists") from exc
+        return reasons
+
     def list_for_proposal_version(self, proposal_version_id: str) -> list[RecommendationReason]:
         rows = self._session.exec(
             select(RecommendationReasonEntity)
@@ -226,6 +288,15 @@ class SQLModelRecommendationSnapshotRepository(RecommendationSnapshotRepositoryP
         self._session.add(snapshot_to_row(snapshot))
         try:
             self._session.commit()
+        except IntegrityError as exc:
+            self._session.rollback()
+            raise ValueError("snapshot_id already exists or proposal_version_id already has snapshot") from exc
+        return snapshot
+
+    def create_uncommitted(self, snapshot: RecommendationInputSnapshot) -> RecommendationInputSnapshot:
+        self._session.add(snapshot_to_row(snapshot))
+        try:
+            self._session.flush()
         except IntegrityError as exc:
             self._session.rollback()
             raise ValueError("snapshot_id already exists or proposal_version_id already has snapshot") from exc

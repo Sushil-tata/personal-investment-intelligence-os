@@ -24,10 +24,19 @@ class InMemoryRecommendationProposalRepository(RecommendationProposalRepositoryP
         self._items: dict[str, RecommendationProposal] = {}
 
     def create(self, proposal: RecommendationProposal) -> RecommendationProposal:
+        return self.create_uncommitted(proposal)
+
+    def create_uncommitted(self, proposal: RecommendationProposal) -> RecommendationProposal:
         if proposal.proposal_id in self._items:
             raise ValueError(f"proposal_id already exists: {proposal.proposal_id}")
         self._items[proposal.proposal_id] = proposal
         return proposal
+
+    def commit(self) -> None:
+        return None
+
+    def rollback(self) -> None:
+        return None
 
     def get(self, proposal_id: str) -> RecommendationProposal | None:
         return self._items.get(proposal_id)
@@ -39,6 +48,9 @@ class InMemoryRecommendationProposalVersionRepository(RecommendationProposalVers
         self._by_proposal_id: dict[str, list[RecommendationProposalVersion]] = {}
 
     def create(self, version: RecommendationProposalVersion) -> RecommendationProposalVersion:
+        return self.create_uncommitted(version)
+
+    def create_uncommitted(self, version: RecommendationProposalVersion) -> RecommendationProposalVersion:
         if version.proposal_version_id in self._by_id:
             raise ValueError(f"proposal_version_id already exists: {version.proposal_version_id}")
 
@@ -92,6 +104,12 @@ class InMemoryRecommendationTraceRepository(RecommendationTraceRepositoryProtoco
         self._evidence_links: dict[str, RecommendationEvidenceLink] = {}
 
     def create_claim_links(self, links: tuple[RecommendationClaimLink, ...]) -> tuple[RecommendationClaimLink, ...]:
+        return self.create_claim_links_uncommitted(links)
+
+    def create_claim_links_uncommitted(
+        self,
+        links: tuple[RecommendationClaimLink, ...],
+    ) -> tuple[RecommendationClaimLink, ...]:
         for row in links:
             if row.claim_link_id in self._claim_links:
                 raise ValueError(f"claim_link_id already exists: {row.claim_link_id}")
@@ -99,6 +117,12 @@ class InMemoryRecommendationTraceRepository(RecommendationTraceRepositoryProtoco
         return links
 
     def create_evidence_links(self, links: tuple[RecommendationEvidenceLink, ...]) -> tuple[RecommendationEvidenceLink, ...]:
+        return self.create_evidence_links_uncommitted(links)
+
+    def create_evidence_links_uncommitted(
+        self,
+        links: tuple[RecommendationEvidenceLink, ...],
+    ) -> tuple[RecommendationEvidenceLink, ...]:
         for row in links:
             if row.evidence_link_id in self._evidence_links:
                 raise ValueError(f"evidence_link_id already exists: {row.evidence_link_id}")
@@ -121,6 +145,9 @@ class InMemoryRecommendationReasonRepository(RecommendationReasonRepositoryProto
         self._items: dict[str, RecommendationReason] = {}
 
     def create_many(self, reasons: tuple[RecommendationReason, ...]) -> tuple[RecommendationReason, ...]:
+        return self.create_many_uncommitted(reasons)
+
+    def create_many_uncommitted(self, reasons: tuple[RecommendationReason, ...]) -> tuple[RecommendationReason, ...]:
         for row in reasons:
             if row.reason_id in self._items:
                 raise ValueError(f"reason_id already exists: {row.reason_id}")
@@ -139,6 +166,9 @@ class InMemoryRecommendationSnapshotRepository(RecommendationSnapshotRepositoryP
         self._by_version_id: dict[str, RecommendationInputSnapshot] = {}
 
     def create(self, snapshot: RecommendationInputSnapshot) -> RecommendationInputSnapshot:
+        return self.create_uncommitted(snapshot)
+
+    def create_uncommitted(self, snapshot: RecommendationInputSnapshot) -> RecommendationInputSnapshot:
         if snapshot.snapshot_id in self._by_snapshot_id:
             raise ValueError(f"snapshot_id already exists: {snapshot.snapshot_id}")
         if snapshot.proposal_version_id in self._by_version_id:

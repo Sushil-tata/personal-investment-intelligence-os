@@ -159,87 +159,93 @@ class RecommendationDecisionEngine:
         evaluation = self.evaluate(data)
 
         proposal = self._proposal_repository.get(data.proposal_id)
-        if proposal is None:
-            proposal = self._proposal_repository.create(
-                RecommendationProposal(
+        try:
+            if proposal is None:
+                proposal = self._proposal_repository.create_uncommitted(
+                    RecommendationProposal(
+                        proposal_id=data.proposal_id,
+                        target_type=data.target_type,
+                        target_key=data.target_key,
+                        scope=data.scope,
+                        status=ProposalStatus.ACTIVE,
+                        created_at=data.generated_at,
+                        updated_at=data.generated_at,
+                    )
+                )
+
+            existing_version, existing_snapshot = self._find_existing_snapshot_by_hash(
+                proposal_id=data.proposal_id,
+                input_hash=evaluation.trace.input_hash,
+            )
+            if existing_version is not None and existing_snapshot is not None:
+                return RecommendationGenerationResult(
+                    proposal=proposal,
+                    proposal_version=existing_version,
+                    input_snapshot=existing_snapshot,
+                    reasons=tuple(self._reason_repository.list_for_proposal_version(existing_version.proposal_version_id)),
+                    claim_links=tuple(self._trace_repository.list_claim_links(existing_version.proposal_version_id)),
+                    evidence_links=tuple(self._trace_repository.list_evidence_links(existing_version.proposal_version_id)),
+                    evaluation=evaluation,
+                )
+
+            latest = self._version_repository.get_latest(data.proposal_id)
+            version_number = (latest.version_number + 1) if latest else 1
+            proposal_version_id = f"{data.proposal_id}:v{version_number}"
+            snapshot_id = f"{data.proposal_id}:snap:v{version_number}"
+
+            version = self._version_repository.create_uncommitted(
+                RecommendationProposalVersion(
+                    proposal_version_id=proposal_version_id,
                     proposal_id=data.proposal_id,
-                    target_type=data.target_type,
-                    target_key=data.target_key,
-                    scope=data.scope,
+                    version_number=version_number,
                     status=ProposalStatus.ACTIVE,
                     created_at=data.generated_at,
-                    updated_at=data.generated_at,
+                    snapshot_id=snapshot_id,
+                    action_proposal=ActionProposal(
+                        action=evaluation.strategy_result.action,
+                        position_size_range=evaluation.strategy_result.position_size_range,
+                        note=(
+                            f"strategy={evaluation.strategy_result.strategy_key};"
+                            f" score={evaluation.strategy_result.overall_score:.6f}"
+                        ),
+                    ),
+                    confidence_breakdown=evaluation.confidence_breakdown,
+                    priority=evaluation.strategy_result.priority,
+                    required_human_review=evaluation.strategy_result.required_human_review,
+                    supersedes_version_id=latest.proposal_version_id if latest else None,
                 )
             )
 
-        existing_version, existing_snapshot = self._find_existing_snapshot_by_hash(
-            proposal_id=data.proposal_id,
-            input_hash=evaluation.trace.input_hash,
-        )
-        if existing_version is not None and existing_snapshot is not None:
-            return RecommendationGenerationResult(
-                proposal=proposal,
-                proposal_version=existing_version,
-                input_snapshot=existing_snapshot,
-                reasons=tuple(self._reason_repository.list_for_proposal_version(existing_version.proposal_version_id)),
-                claim_links=tuple(self._trace_repository.list_claim_links(existing_version.proposal_version_id)),
-                evidence_links=tuple(self._trace_repository.list_evidence_links(existing_version.proposal_version_id)),
-                evaluation=evaluation,
+            snapshot = self._snapshot_repository.create_uncommitted(
+                RecommendationInputSnapshot(
+                    snapshot_id=snapshot_id,
+                    proposal_version_id=proposal_version_id,
+                    captured_at=data.generated_at,
+                    canonical_payload_json=evaluation.trace.canonical_payload_json,
+                    input_hash=evaluation.trace.input_hash,
+                )
             )
 
-        latest = self._version_repository.get_latest(data.proposal_id)
-        version_number = (latest.version_number + 1) if latest else 1
-        proposal_version_id = f"{data.proposal_id}:v{version_number}"
-        snapshot_id = f"{data.proposal_id}:snap:v{version_number}"
-
-        version = self._version_repository.create(
-            RecommendationProposalVersion(
+            reasons = _build_reasons(
                 proposal_version_id=proposal_version_id,
-                proposal_id=data.proposal_id,
-                version_number=version_number,
-                status=ProposalStatus.ACTIVE,
-                created_at=data.generated_at,
-                snapshot_id=snapshot_id,
-                action_proposal=ActionProposal(
-                    action=evaluation.strategy_result.action,
-                    position_size_range=evaluation.strategy_result.position_size_range,
-                    note=(
-                        f"strategy={evaluation.strategy_result.strategy_key};"
-                        f" score={evaluation.strategy_result.overall_score:.6f}"
-                    ),
-                ),
-                confidence_breakdown=evaluation.confidence_breakdown,
-                priority=evaluation.strategy_result.priority,
-                required_human_review=evaluation.strategy_result.required_human_review,
-                supersedes_version_id=latest.proposal_version_id if latest else None,
+                component_breakdown=evaluation.strategy_result.component_breakdown,
+                explanation=evaluation.explanation,
             )
-        )
+            if reasons:
+                self._reason_repository.create_many_uncommitted(reasons)
 
-        snapshot = self._snapshot_repository.create(
-            RecommendationInputSnapshot(
-                snapshot_id=snapshot_id,
-                proposal_version_id=proposal_version_id,
-                captured_at=data.generated_at,
-                canonical_payload_json=evaluation.trace.canonical_payload_json,
-                input_hash=evaluation.trace.input_hash,
-            )
-        )
+            claim_links = _build_claim_links(data, proposal_version_id)
+            if claim_links:
+                self._trace_repository.create_claim_links_uncommitted(claim_links)
 
-        reasons = _build_reasons(
-            proposal_version_id=proposal_version_id,
-            component_breakdown=evaluation.strategy_result.component_breakdown,
-            explanation=evaluation.explanation,
-        )
-        if reasons:
-            self._reason_repository.create_many(reasons)
+            evidence_links = _build_evidence_links(data, proposal_version_id)
+            if evidence_links:
+                self._trace_repository.create_evidence_links_uncommitted(evidence_links)
 
-        claim_links = _build_claim_links(data, proposal_version_id)
-        if claim_links:
-            self._trace_repository.create_claim_links(claim_links)
-
-        evidence_links = _build_evidence_links(data, proposal_version_id)
-        if evidence_links:
-            self._trace_repository.create_evidence_links(evidence_links)
+            self._proposal_repository.commit()
+        except Exception:
+            self._proposal_repository.rollback()
+            raise
 
         return RecommendationGenerationResult(
             proposal=proposal,

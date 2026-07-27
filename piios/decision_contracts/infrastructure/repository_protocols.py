@@ -20,6 +20,15 @@ class RecommendationProposalRepositoryProtocol(Protocol):
     def get(self, proposal_id: str) -> RecommendationProposal | None:
         ...
 
+    def create_uncommitted(self, proposal: RecommendationProposal) -> RecommendationProposal:
+        ...
+
+    def commit(self) -> None:
+        ...
+
+    def rollback(self) -> None:
+        ...
+
 
 class RecommendationProposalVersionRepositoryProtocol(Protocol):
     def create(self, version: RecommendationProposalVersion) -> RecommendationProposalVersion:
@@ -32,6 +41,9 @@ class RecommendationProposalVersionRepositoryProtocol(Protocol):
         ...
 
     def get_latest(self, proposal_id: str) -> RecommendationProposalVersion | None:
+        ...
+
+    def create_uncommitted(self, version: RecommendationProposalVersion) -> RecommendationProposalVersion:
         ...
 
 
@@ -50,7 +62,19 @@ class RecommendationTraceRepositoryProtocol(Protocol):
     def create_claim_links(self, links: tuple[RecommendationClaimLink, ...]) -> tuple[RecommendationClaimLink, ...]:
         ...
 
+    def create_claim_links_uncommitted(
+        self,
+        links: tuple[RecommendationClaimLink, ...],
+    ) -> tuple[RecommendationClaimLink, ...]:
+        ...
+
     def create_evidence_links(self, links: tuple[RecommendationEvidenceLink, ...]) -> tuple[RecommendationEvidenceLink, ...]:
+        ...
+
+    def create_evidence_links_uncommitted(
+        self,
+        links: tuple[RecommendationEvidenceLink, ...],
+    ) -> tuple[RecommendationEvidenceLink, ...]:
         ...
 
     def list_claim_links(self, proposal_version_id: str) -> list[RecommendationClaimLink]:
@@ -64,12 +88,18 @@ class RecommendationReasonRepositoryProtocol(Protocol):
     def create_many(self, reasons: tuple[RecommendationReason, ...]) -> tuple[RecommendationReason, ...]:
         ...
 
+    def create_many_uncommitted(self, reasons: tuple[RecommendationReason, ...]) -> tuple[RecommendationReason, ...]:
+        ...
+
     def list_for_proposal_version(self, proposal_version_id: str) -> list[RecommendationReason]:
         ...
 
 
 class RecommendationSnapshotRepositoryProtocol(Protocol):
     def create(self, snapshot: RecommendationInputSnapshot) -> RecommendationInputSnapshot:
+        ...
+
+    def create_uncommitted(self, snapshot: RecommendationInputSnapshot) -> RecommendationInputSnapshot:
         ...
 
     def get(self, snapshot_id: str) -> RecommendationInputSnapshot | None:
