@@ -214,6 +214,117 @@ class ThesisVersionEntity(SQLModel, table=True):
     created_at: str
 
 
+class ThesisClaimEntity(SQLModel, table=True):
+    __tablename__ = "thesis_claims"
+    __table_args__ = (
+        UniqueConstraint("claim_id", name="uq_thesis_claims_claim_id"),
+        UniqueConstraint("thesis_version_id", "claim_key", name="uq_thesis_claims_version_claim_key"),
+        Index("ix_thesis_claims_thesis_version_id", "thesis_version_id"),
+        Index("ix_thesis_claims_thesis_id", "thesis_id"),
+        Index("ix_thesis_claims_status", "status"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    claim_id: str
+    thesis_version_id: str
+    thesis_id: str | None = None
+    claim_key: str
+    claim_text: str
+    claim_type: str
+    status: str
+    active_from: str
+    active_to: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class EvidenceSourceEntity(SQLModel, table=True):
+    __tablename__ = "evidence_sources"
+    __table_args__ = (
+        UniqueConstraint("source_id", name="uq_evidence_sources_source_id"),
+        Index("ix_evidence_sources_type", "source_type"),
+        Index("ix_evidence_sources_system", "source_system"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    source_id: str
+    source_type: str
+    publisher: str
+    url: str | None = None
+    source_system: str
+    published_at: str | None = None
+    retrieved_at: str
+    credibility_tier: str
+    created_at: str
+
+
+class EvidenceItemEntity(SQLModel, table=True):
+    __tablename__ = "evidence_items"
+    __table_args__ = (
+        UniqueConstraint("evidence_id", name="uq_evidence_items_evidence_id"),
+        Index("ix_evidence_items_source_id", "source_id"),
+        Index("ix_evidence_items_content_hash", "content_hash"),
+        Index("ix_evidence_items_as_of_date", "as_of_date"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    evidence_id: str
+    source_id: str
+    title: str
+    excerpt: str
+    content_hash: str | None = None
+    as_of_date: str | None = None
+    metadata_json: str
+    created_at: str
+
+
+class ClaimEvidenceInterpretationEntity(SQLModel, table=True):
+    __tablename__ = "claim_evidence_interpretations"
+    __table_args__ = (
+        UniqueConstraint("interpretation_id", name="uq_claim_evidence_interpretations_interpretation_id"),
+        Index("ix_claim_evidence_interp_claim_active", "claim_id", "effective_to"),
+        Index("ix_claim_evidence_interp_evidence_id", "evidence_id"),
+        Index("ix_claim_evidence_interp_supersedes", "supersedes_interpretation_id"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    interpretation_id: str
+    claim_id: str
+    evidence_id: str
+    relation: str
+    strength: str
+    note: str | None = None
+    effective_from: str
+    effective_to: str | None = None
+    supersedes_interpretation_id: str | None = None
+    superseded_by_interpretation_id: str | None = None
+    created_at: str
+
+
+class ProvenanceRecordEntity(SQLModel, table=True):
+    __tablename__ = "provenance_records"
+    __table_args__ = (
+        UniqueConstraint("provenance_id", name="uq_provenance_records_provenance_id"),
+        Index("ix_provenance_records_entity", "entity_type", "entity_id"),
+        Index("ix_provenance_records_source_system", "source_system"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    provenance_id: str
+    entity_type: str
+    entity_id: str
+    action: str
+    actor_type: str
+    actor_reference: str
+    ingestion_method: str
+    source_system: str
+    extraction_method: str
+    model_name: str | None = None
+    model_version: str | None = None
+    payload_hash: str | None = None
+    created_at: str
+
+
 class TacticalSignalEntity(SQLModel, table=True):
     __tablename__ = "tactical_signals"
     id: Optional[int] = Field(default=None, primary_key=True)

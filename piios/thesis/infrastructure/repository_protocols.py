@@ -26,6 +26,9 @@ class ThesisVersionRepositoryProtocol(Protocol):
     def create(self, version: ThesisVersion) -> ThesisVersion:
         ...
 
+    def get_by_version_id(self, version_id: str) -> ThesisVersion | None:
+        ...
+
     def get_latest(self, thesis_id: str) -> ThesisVersion | None:
         ...
 
