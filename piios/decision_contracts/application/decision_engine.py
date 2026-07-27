@@ -126,6 +126,11 @@ class RecommendationDecisionEngine:
             confidence=confidence,
             explanation=explanation,
             engine_version=self._engine_version,
+            strategy_governance={
+                "strategy_key": strategy.strategy_key,
+                "strategy_hash": strategy.governance_hash(),
+                "strategy_profile": strategy.governance_profile(),
+            },
         )
         trace_json = json.dumps(trace_payload, sort_keys=True, separators=(",", ":"))
         trace_hash = hashlib.sha256(trace_json.encode("utf-8")).hexdigest()
@@ -232,9 +237,13 @@ class RecommendationDecisionEngine:
         )
 
     def _resolve_strategy(self, strategy_key: str) -> WeightedRecommendationStrategy:
-        if strategy_key in self._strategies:
-            return self._strategies[strategy_key]
-        return self._strategies[self._default_strategy_key]
+        strategy = self._strategies.get(strategy_key)
+        if strategy is None:
+            available = ", ".join(sorted(self._strategies.keys()))
+            raise ValueError(
+                f"unknown strategy_key: {strategy_key}. configured strategies: {available}"
+            )
+        return strategy
 
     def _build_confidence_breakdown(
         self,
@@ -337,6 +346,7 @@ def _canonical_trace_payload(
     confidence: ConfidenceBreakdown,
     explanation: RecommendationExplanation,
     engine_version: str,
+    strategy_governance: dict[str, object],
 ) -> dict[str, object]:
     claims = sorted(
         [
@@ -399,6 +409,7 @@ def _canonical_trace_payload(
             "scope": data.scope,
             "strategy_key": data.strategy_key,
         },
+        "strategy_governance": strategy_governance,
         "generated_at": data.generated_at.isoformat(),
         "thesis_health": {
             "thesis_version_id": data.thesis_health_snapshot.thesis_version_id,

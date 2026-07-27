@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
+import pytest
+
 from piios.decision_contracts.application.decision_engine import RecommendationDecisionEngine
 from piios.decision_contracts.application.scoring_components import PortfolioContextSnapshot, RecommendationEngineInput
 from piios.decision_contracts.infrastructure.in_memory_repositories import (
@@ -238,3 +240,25 @@ def test_engine_supports_pluggable_strategy_selection() -> None:
     assert aggressive.evaluation.strategy_result.strategy_key == "aggressive-v1"
     assert balanced.evaluation.strategy_result.strategy_key == "balanced-v1"
     assert aggressive.evaluation.strategy_result.overall_score != balanced.evaluation.strategy_result.overall_score
+
+
+def test_engine_rejects_unknown_strategy_key() -> None:
+    engine = _build_engine()
+
+    with pytest.raises(ValueError, match="unknown strategy_key"):
+        engine.generate_recommendation(_build_input(strategy_key="unknown-v99"))
+
+
+def test_engine_trace_contains_deterministic_strategy_governance_hash() -> None:
+    engine = _build_engine()
+
+    first = engine.generate_recommendation(_build_input(strategy_key="balanced-v1"))
+    second = engine.generate_recommendation(_build_input(strategy_key="balanced-v1"))
+
+    first_payload = json.loads(first.input_snapshot.canonical_payload_json)
+    second_payload = json.loads(second.input_snapshot.canonical_payload_json)
+
+    assert first_payload["strategy_governance"]["strategy_key"] == "balanced-v1"
+    assert first_payload["strategy_governance"]["strategy_hash"]
+    assert first_payload["strategy_governance"]["strategy_hash"] == second_payload["strategy_governance"]["strategy_hash"]
+    assert first_payload["strategy_governance"]["strategy_profile"]["strategy_key"] == "balanced-v1"

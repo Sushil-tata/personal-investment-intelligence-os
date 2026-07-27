@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
+import json
 
 from piios.decision_contracts.application.scoring_components import (
     ComponentOrientation,
@@ -130,6 +132,27 @@ class WeightedRecommendationStrategy:
                 sorted(breakdown, key=lambda row: (-row.contribution, row.component_key))
             ),
         )
+
+    def governance_profile(self) -> dict[str, object]:
+        return {
+            "strategy_key": self.strategy_key,
+            "display_name": self.display_name,
+            "component_weights": {
+                key: round(value, 6)
+                for key, value in sorted(self.component_weights.items(), key=lambda row: row[0])
+            },
+            "buy_threshold": round(self.buy_threshold, 6),
+            "add_threshold": round(self.add_threshold, 6),
+            "hold_threshold": round(self.hold_threshold, 6),
+            "watch_threshold": round(self.watch_threshold, 6),
+            "risk_appetite_multiplier": round(self.risk_appetite_multiplier, 6),
+            "mandatory_review_score_threshold": round(self.mandatory_review_score_threshold, 6),
+            "mandatory_review_penalty_threshold": round(self.mandatory_review_penalty_threshold, 6),
+        }
+
+    def governance_hash(self) -> str:
+        payload = json.dumps(self.governance_profile(), sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     def _resolve_action(self, overall_score: float, ctx: PortfolioContextSnapshot) -> RecommendationAction:
         if overall_score >= self.buy_threshold:
