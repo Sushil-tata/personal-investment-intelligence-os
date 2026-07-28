@@ -25,6 +25,25 @@ from piios.decision_contracts.tests.functional_acceptance_helpers import build_i
 from piios_backend.core.config import settings
 
 
+def _postgres_available() -> bool:
+    try:
+        engine = create_engine(settings.db_url)
+        with engine.connect() as conn:
+            conn.execute(sa.text("SELECT 1"))
+        return True
+    except Exception:
+        return False
+
+
+pytestmark = pytest.mark.skipif(
+    not _postgres_available(),
+    reason=(
+        "PostgreSQL functional acceptance requires a live PostgreSQL instance "
+        "reachable via piios_backend.core.config.settings.db_url"
+    ),
+)
+
+
 class FailingReasonRepository(SQLModelRecommendationReasonRepository):
     def create_many_uncommitted(self, reasons):
         raise RuntimeError("injected failure")

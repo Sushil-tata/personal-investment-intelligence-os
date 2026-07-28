@@ -27,7 +27,7 @@ Latest commit (HEAD at baseline capture):
 
 Working tree state at baseline capture:
 - `git status -sb` showed one untracked doc from prior task:
-- `?? piios/docs/adr/ADR-0008-Milestone3-Architecture-Alignment.md`
+- `?? piios/docs/adr/ADR-019-Milestone3-Architecture-Alignment.md`
 
 Recent log snapshot (`git log --oneline --decorate -10`):
 - `e0ad237` docs: record setup and packaging hygiene debt

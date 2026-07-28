@@ -37,6 +37,23 @@ run_suite "Wave 2B M3 deterministic decision engine" \
   piios/decision_contracts/tests/test_recommendation_strategies.py \
   piios/decision_contracts/tests/test_decision_intelligence_engine.py
 
+printf '\n== Wave 2B M3 PostgreSQL functional acceptance ==\n'
+set +e
+pg_gate_output="$(python -m pytest -q backend/tests/test_wave2b_m3_functional_acceptance_postgres.py 2>&1)"
+pg_gate_code=$?
+set -e
+printf '%s\n' "$pg_gate_output"
+if [[ $pg_gate_code -eq 0 ]]; then
+  if printf '%s' "$pg_gate_output" | grep -q 'skipped'; then
+    printf 'Result: skipped\n'
+  else
+    printf 'Result: passed\n'
+  fi
+else
+  printf 'Result: failed\n'
+  exit $pg_gate_code
+fi
+
 run_suite "Wave 2A.3 documented gate" \
   backend/tests/test_wave2a3_claims_migration.py \
   backend/tests/test_wave2a3_postgres_integration.py \

@@ -32,3 +32,5 @@ coverage.xml
 htmlcov/
 
 alembic.ini.local
+
+backend/piios_backend.egg-info/

@@ -1,4 +1,4 @@
-# ADR-0009: Recommendation Traceability and Reconstruction
+# ADR-020: Recommendation Traceability and Reconstruction
 
 ## Status
 Accepted
