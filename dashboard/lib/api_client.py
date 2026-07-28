@@ -1,10 +1,302 @@
+"""Single, dedicated API client layer for the PIIOS Streamlit frontend.
+
+Every page must go through this module rather than calling ``requests``
+directly, so that:
+
+- the backend base URL is configured in exactly one place;
+- errors (connection failures, timeouts, 4xx/5xx) are handled consistently
+  and surfaced to the page as a typed result instead of an uncaught
+  exception that crashes the whole app;
+- response payloads are parsed into the typed models in ``lib.models``,
+  so a field the backend renamed or removed fails loudly here rather than
+  silently rendering as blank/missing further down in a page.
+
+This module never fabricates data. If an endpoint does not exist, or a
+response is missing a field a screen wants, that is an API gap — record it
+in dashboard/API_GAPS.md and leave the screen honest about the absence,
+per the frontend's advisory-only, no-parallel-engine mandate.
+"""
+from __future__ import annotations
+
 import os
+from dataclasses import dataclass
+from typing import Any, Callable, TypeVar
+
 import requests
+
+from lib import models as m
 
 API_BASE = os.getenv("PIIOS_API_BASE", "http://127.0.0.1:8000/api/v1")
 
+T = TypeVar("T")
+
+
+@dataclass
+class ApiResult:
+    """Outcome of a single API call, used by pages to render loading/
+    error/empty/success states consistently (see lib.ui)."""
+
+    ok: bool
+    data: Any = None
+    error: str | None = None
+    status_code: int | None = None
+
+    @property
+    def is_empty(self) -> bool:
+        if not self.ok:
+            return False
+        if self.data is None:
+            return True
+        if isinstance(self.data, (list, dict)):
+            return len(self.data) == 0
+        return False
+
+
+def _request(method: str, path: str, **kwargs) -> ApiResult:
+    url = f"{API_BASE}{path}"
+    try:
+        response = requests.request(method, url, timeout=20, **kwargs)
+    except requests.exceptions.ConnectionError:
+        return ApiResult(ok=False, error=f"Could not reach the PIIOS API at {API_BASE}. Is the backend running?")
+    except requests.exceptions.Timeout:
+        return ApiResult(ok=False, error=f"Request to {url} timed out after 20s.")
+    except requests.exceptions.RequestException as exc:
+        return ApiResult(ok=False, error=f"Request to {url} failed: {exc}")
+
+    if response.status_code >= 400:
+        detail = response.text
+        try:
+            detail = response.json().get("detail", detail)
+        except ValueError:
+            pass
+        return ApiResult(ok=False, error=f"{response.status_code}: {detail}", status_code=response.status_code)
+
+    try:
+        payload = response.json() if response.content else None
+    except ValueError:
+        payload = response.text
+    return ApiResult(ok=True, data=payload, status_code=response.status_code)
+
+
+def get_json(path: str, params: dict | None = None) -> ApiResult:
+    return _request("GET", path, params=params)
+
+
+def patch_json(path: str, json_body: dict) -> ApiResult:
+    return _request("PATCH", path, json=json_body)
+
 
 def get(path: str):
+    """Backward-compatible helper used by earlier pages. Raises on error
+    (matches historical behaviour) rather than returning ApiResult, so
+    existing pages built before the typed client keep working unchanged."""
     response = requests.get(f"{API_BASE}{path}", timeout=20)
     response.raise_for_status()
     return response.json()
+
+
+def _map(result: ApiResult, fn: Callable[[Any], T]) -> ApiResult:
+    if not result.ok:
+        return result
+    try:
+        return ApiResult(ok=True, data=fn(result.data), status_code=result.status_code)
+    except (KeyError, TypeError) as exc:
+        return ApiResult(ok=False, error=f"Unexpected response shape from backend: {exc}")
+
+
+def _holding(d: dict) -> m.Holding:
+    return m.Holding(
+        holding_id=d["holding_id"], ticker=d["ticker"], name=d["name"], quantity=d["quantity"],
+        market_value=d["market_value"], bucket=d.get("bucket"), geography=d.get("geography", "Global"),
+        currency=d.get("currency", "USD"), asset_class=d.get("asset_class", "Equity"),
+        sector=d.get("sector", "Multi-Sector"), theme=d.get("theme", "Core"),
+    )
+
+
+def _snapshot(d: dict) -> m.PortfolioSnapshot:
+    return m.PortfolioSnapshot(
+        snapshot_id=d["snapshot_id"], owner=d["owner"], total_value=d["total_value"],
+        holdings=[_holding(h) for h in d["holdings"]],
+    )
+
+
+def _drift_item(d: dict) -> m.DriftItem:
+    return m.DriftItem(**{k: d[k] for k in (
+        "dimension", "key", "target_percentage", "actual_percentage", "drift_amount",
+        "drift_percentage", "severity", "recommended_action", "advisory_only")})
+
+
+def _recommendation(d: dict) -> m.Recommendation:
+    return m.Recommendation(**{k: d.get(k) for k in (
+        "recommendation_id", "ticker", "thesis_id", "bucket", "portfolio_bucket", "bull_case", "bear_case",
+        "why_now", "why_not_now", "thesis_invalidation_trigger", "position_size_suggestion", "time_horizon",
+        "confidence_score", "portfolio_fit_score", "data_freshness_timestamp", "source_documents",
+        "source_links", "rationale", "data_source", "model_version", "status", "created_at", "updated_at",
+        "approved_by", "advisory_only")})
+
+
+def _top_recommendation(d: dict) -> m.TopRecommendation:
+    return m.TopRecommendation(**{k: d[k] for k in (
+        "ticker", "sector", "score", "daily_pct", "weekly_pct", "close", "volume_ratio", "recommended_action")})
+
+
+def _tactical_signal(d: dict) -> m.TacticalSignal:
+    return m.TacticalSignal(**{k: d.get(k) for k in (
+        "signal_id", "ticker", "bucket", "status", "entry_zone", "invalidation", "target", "advisory_only")})
+
+
+def _thesis(d: dict) -> m.InvestmentThesis:
+    return m.InvestmentThesis(**{k: d[k] for k in (
+        "thesis_id", "ticker", "asset_name", "theme", "bucket", "thesis", "bull_case", "bear_case", "why_now",
+        "why_not_now", "invalidation_trigger", "valuation_notes", "expected_holding_period", "source_documents",
+        "confidence_score", "status", "created_at", "updated_at")})
+
+
+def _resolution_issue(d: dict) -> m.ResolutionIssueResponse:
+    return m.ResolutionIssueResponse(**{k: d.get(k) for k in (
+        "issue_id", "source_record_type", "source_record_id", "reason", "candidates", "recommended_resolution",
+        "owner_decision", "reviewer", "reviewed_at", "notes", "resulting_mapping_id", "status", "created_at")})
+
+
+# --- Portfolio -------------------------------------------------------------
+
+def get_portfolio() -> ApiResult:
+    return _map(get_json("/portfolio"), lambda d: [_snapshot(s) for s in d])
+
+
+def get_portfolio_targets() -> ApiResult:
+    return _map(get_json("/portfolio/targets"), lambda d: m.PortfolioTargetsResponse(**d))
+
+
+def get_portfolio_drift() -> ApiResult:
+    return _map(get_json("/portfolio/drift"), lambda d: m.PortfolioDriftResponse(
+        generated_at=d["generated_at"], items=[_drift_item(i) for i in d["items"]]))
+
+
+def get_holdings() -> ApiResult:
+    return _map(get_json("/holdings"), lambda d: [_holding(h) for h in d])
+
+
+def get_watchlist() -> ApiResult:
+    return _map(get_json("/watchlist"), lambda d: [
+        m.WatchlistIdea(watchlist_id=w["watchlist_id"], ticker=w["ticker"], note=w["note"], bucket=w.get("bucket"))
+        for w in d])
+
+
+# --- Portfolio layers (household / net worth / allocation / exposure) -----
+
+def get_family_portfolios() -> ApiResult:
+    return _map(get_json("/family/portfolios"), lambda d: m.FamilyPortfolioResponse(
+        households=[m.FamilyPortfolioMember(**h) for h in d["households"]]))
+
+
+def get_net_worth() -> ApiResult:
+    return _map(get_json("/portfolio/net-worth"), lambda d: m.NetWorthResponse(
+        owner=d["owner"], total_assets=d["total_assets"], total_liabilities=d["total_liabilities"],
+        net_worth=d["net_worth"], breakdown=[m.NetWorthItem(**b) for b in d["breakdown"]]))
+
+
+def get_allocation() -> ApiResult:
+    return _map(get_json("/portfolio/allocation"), lambda d: m.AllocationResponse(
+        total_value=d["total_value"], items=[m.AllocationItem(**i) for i in d["items"]]))
+
+
+def get_currency_exposure() -> ApiResult:
+    return _map(get_json("/portfolio/currency-exposure"), lambda d: m.CurrencyExposureResponse(
+        total_value=d["total_value"], items=[m.CurrencyExposureItem(**i) for i in d["items"]]))
+
+
+def get_ips_constraints() -> ApiResult:
+    return _map(get_json("/ips/constraints"), lambda d: m.IPSConstraintResponse(
+        constraints=[m.IPSConstraint(**c) for c in d["constraints"]]))
+
+
+def get_instrument_master() -> ApiResult:
+    return _map(get_json("/instruments"), lambda d: m.InstrumentMasterResponse(
+        instruments=[m.InstrumentMasterItem(**i) for i in d["instruments"]]))
+
+
+def get_data_trust_hierarchy() -> ApiResult:
+    return _map(get_json("/data-trust/hierarchy"), lambda d: m.DataTrustHierarchyResponse(
+        hierarchy=[m.DataTrustSourceItem(**s) for s in d["hierarchy"]]))
+
+
+# --- Recommendations / decisions -------------------------------------------
+
+def get_recommendations() -> ApiResult:
+    return _map(get_json("/recommendations"), lambda d: [_recommendation(r) for r in d])
+
+
+def get_recommendation_queue() -> ApiResult:
+    return _map(get_json("/recommendations/queue"), lambda d: [_recommendation(r) for r in d["items"]])
+
+
+def get_top_recommendations(limit: int = 50, sector: str | None = None) -> ApiResult:
+    params = {"limit": limit}
+    if sector:
+        params["sector"] = sector
+    return _map(get_json("/recommendations/top", params=params), lambda d: [_top_recommendation(r) for r in d])
+
+
+def update_recommendation_status(recommendation_id: str, status: str, approved_by: str | None = None) -> ApiResult:
+    body = {"status": status, "approved_by": approved_by}
+    return _map(patch_json(f"/recommendations/{recommendation_id}/status", body), _recommendation)
+
+
+def get_tactical_signals() -> ApiResult:
+    return _map(get_json("/tactical-signals"), lambda d: [_tactical_signal(s) for s in d])
+
+
+# --- Risk / governance / research ------------------------------------------
+
+def get_risk_limits() -> ApiResult:
+    """The /risk endpoint currently returns only three static position-limit
+    numbers (see dashboard/API_GAPS.md) — no volatility, drawdown, beta,
+    correlation, VaR, ES or stress-test data exists on this branch."""
+    return get_json("/risk")
+
+
+def get_resolution_issues(limit: int = 100) -> ApiResult:
+    return _map(get_json("/identity/resolution-issues", params={"limit": limit}),
+                lambda d: [_resolution_issue(i) for i in d])
+
+
+def get_shadow_diagnostics() -> ApiResult:
+    return _map(get_json("/identity/shadow/diagnostics"), lambda d: m.ShadowIdentityDiagnosticsResponse(
+        enabled=d["enabled"], checked_records=d["checked_records"], unresolved_records=d["unresolved_records"],
+        items=[m.ShadowIdentityCheckItem(**i) for i in d["items"]]))
+
+
+def get_research_feed() -> ApiResult:
+    return _map(get_json("/research"), lambda d: m.ResearchFeedResponse(
+        items=[m.ResearchDocumentResponse(**i) for i in d["items"]]))
+
+
+def get_journal() -> ApiResult:
+    return _map(get_json("/journal"), lambda d: [m.JournalEntry(**e) for e in d])
+
+
+def get_theses() -> ApiResult:
+    return _map(get_json("/theses"), lambda d: [_thesis(t) for t in d])
+
+
+def update_thesis_status(thesis_id: str, status: str) -> ApiResult:
+    return _map(patch_json(f"/theses/{thesis_id}/status", {"status": status}), _thesis)
+
+
+def get_scores() -> ApiResult:
+    """Untyped: the backend returns a bare dict built by a live-feeds
+    service with no response_model / schema, so no field contract exists
+    to bind a dataclass to yet (see dashboard/API_GAPS.md)."""
+    return get_json("/scores")
+
+
+def get_score_explainability(limit: int = 25, sector: str | None = None) -> ApiResult:
+    params = {"limit": limit}
+    if sector:
+        params["sector"] = sector
+    return get_json("/scores/explainability", params=params)
+
+
+def get_health() -> ApiResult:
+    return _map(get_json("/health"), lambda d: m.HealthResponse(**d))
