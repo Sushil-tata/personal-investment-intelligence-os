@@ -50,6 +50,16 @@ from .diagnostics_service import (
     RecommendationDiagnosticsService,
     TraceabilityDiagnostic,
 )
+from .decision_query_service import (
+    DecisionDetail,
+    DecisionNotFoundError,
+    DecisionQueryError,
+    DecisionQueryService,
+    ProposalNotFoundError,
+    ProposalVersionNotFoundError,
+    RecommendationProposalDetail,
+    RecommendationProposalVersionDetail,
+)
 from .strategies import (
     StrategyResult,
     WeightedComponentScore,
@@ -86,6 +96,14 @@ __all__ = [
     "DiagnosticsServiceError",
     "DiagnosticsRepositoryError",
     "RecommendationDiagnosticsService",
+    "DecisionQueryError",
+    "ProposalNotFoundError",
+    "ProposalVersionNotFoundError",
+    "DecisionNotFoundError",
+    "RecommendationProposalDetail",
+    "RecommendationProposalVersionDetail",
+    "DecisionDetail",
+    "DecisionQueryService",
     "MissingTraceError",
     "MissingInputSnapshotError",
     "IncompleteTraceError",

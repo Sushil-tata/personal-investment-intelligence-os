@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session
 
 from piios_backend.api.routes import (
+    decision_contracts,
     graph,
     health,
     holdings,
@@ -70,6 +71,7 @@ app.include_router(graph.router, prefix=settings.api_prefix)
 app.include_router(theses.router, prefix=settings.api_prefix)
 app.include_router(portfolio_layers.router, prefix=settings.api_prefix)
 app.include_router(identity.router, prefix=settings.api_prefix)
+app.include_router(decision_contracts.router, prefix=settings.api_prefix)
 
 
 @app.get("/")

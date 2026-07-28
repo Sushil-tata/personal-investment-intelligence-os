@@ -117,3 +117,6 @@ Wave 2B Milestone 4 is functionally accepted.
 
 Recommendation:
 - Milestone 5 planning may proceed, with no unresolved Milestone 4 blocker identified.
+
+Historical note:
+- Milestone 5 has now been completed and accepted in `piios/docs/WAVE2B_M5_FUNCTIONAL_ACCEPTANCE_REPORT.md`.

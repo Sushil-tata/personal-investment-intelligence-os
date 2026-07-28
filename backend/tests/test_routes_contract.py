@@ -33,6 +33,7 @@ REQUIRED_PATHS = [
     "/api/v1/tactical-signals",
     "/api/v1/risk",
     "/api/v1/journal",
+    "/api/v1/decision-contracts/health",
 ]
 
 
