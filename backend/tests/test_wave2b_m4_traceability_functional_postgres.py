@@ -488,6 +488,49 @@ def test_replay_verification_failure_reports_differences_postgres() -> None:
             assert any(row.field in {"action", "overall_score", "deterministic_input_hash"} for row in report.differences)
 
 
+def test_replay_verification_failure_reports_persisted_proposal_differences_postgres() -> None:
+    engine_sql = create_engine(settings.db_url)
+    data = build_input(scenario_catalog()["A_strong_positive"])
+
+    for _ in _with_seed(engine_sql, data):
+        with Session(engine_sql) as session:
+            engine = RecommendationDecisionEngine(
+                proposal_repository=SQLModelRecommendationProposalRepository(session),
+                version_repository=SQLModelRecommendationProposalVersionRepository(session),
+                snapshot_repository=SQLModelRecommendationSnapshotRepository(session),
+                reason_repository=SQLModelRecommendationReasonRepository(session),
+                trace_repository=SQLModelRecommendationTraceRepository(session),
+            )
+            generated = engine.generate_recommendation(data)
+
+            session.execute(
+                sa.text(
+                    """
+                    UPDATE decision_recommendation_proposal_versions
+                    SET action='SELL', action_note='strategy=balanced-v1; score=0.111111'
+                    WHERE proposal_version_id=:proposal_version_id
+                    """
+                ),
+                {"proposal_version_id": generated.proposal_version.proposal_version_id},
+            )
+            session.commit()
+
+            reconstruction = RecommendationReconstructionService(
+                proposal_repository=SQLModelRecommendationProposalRepository(session),
+                version_repository=SQLModelRecommendationProposalVersionRepository(session),
+                snapshot_repository=SQLModelRecommendationSnapshotRepository(session),
+                trace_repository=SQLModelRecommendationTraceRepository(session),
+                reason_repository=SQLModelRecommendationReasonRepository(session),
+                decision_repository=SQLModelInvestmentDecisionRepository(session),
+            )
+            replay = RecommendationReplayVerificationService(reconstruction)
+            report = replay.verify_by_proposal_version(generated.proposal_version.proposal_version_id)
+
+            assert report.status == "FAIL"
+            assert any(row.field == "persisted_proposal.action" for row in report.differences)
+            assert any(row.field == "persisted_proposal.overall_score" for row in report.differences)
+
+
 def test_audit_trace_is_not_deleted_by_parent_delete_postgres() -> None:
     engine_sql = create_engine(settings.db_url)
     data = build_input(scenario_catalog()["C_mixed_conflicting"])
@@ -503,6 +546,9 @@ def test_audit_trace_is_not_deleted_by_parent_delete_postgres() -> None:
             )
             generated = engine.generate_recommendation(data)
             proposal_id = generated.proposal.proposal_id
+            proposal_version_id = generated.proposal_version.proposal_version_id
+            snapshot_id = generated.input_snapshot.snapshot_id
+            trace_id = generated.recommendation_trace.trace_id
 
             with pytest.raises(IntegrityError):
                 session.execute(
@@ -514,8 +560,201 @@ def test_audit_trace_is_not_deleted_by_parent_delete_postgres() -> None:
                 session.commit()
             session.rollback()
 
-            trace_count = session.execute(
-                sa.text("SELECT COUNT(*) FROM decision_recommendation_traces WHERE proposal_id=:proposal_id"),
-                {"proposal_id": proposal_id},
+            _assert_parent_and_trace_integrity(
+                session,
+                proposal_id=proposal_id,
+                proposal_version_id=proposal_version_id,
+                snapshot_id=snapshot_id,
+                trace_id=trace_id,
+            )
+
+            reconstruction = RecommendationReconstructionService(
+                proposal_repository=SQLModelRecommendationProposalRepository(session),
+                version_repository=SQLModelRecommendationProposalVersionRepository(session),
+                snapshot_repository=SQLModelRecommendationSnapshotRepository(session),
+                trace_repository=SQLModelRecommendationTraceRepository(session),
+                reason_repository=SQLModelRecommendationReasonRepository(session),
+                decision_repository=SQLModelInvestmentDecisionRepository(session),
+            )
+            lineage = reconstruction.reconstruct_by_proposal_version(proposal_version_id)
+            assert lineage.trace.trace_id == trace_id
+
+
+def _assert_parent_and_trace_integrity(session: Session, *, proposal_id: str, proposal_version_id: str, snapshot_id: str, trace_id: str) -> None:
+    proposal_count = session.execute(
+        sa.text("SELECT COUNT(*) FROM decision_recommendation_proposals WHERE proposal_id=:proposal_id"),
+        {"proposal_id": proposal_id},
+    ).scalar_one()
+    proposal_version_count = session.execute(
+        sa.text(
+            "SELECT COUNT(*) FROM decision_recommendation_proposal_versions WHERE proposal_version_id=:proposal_version_id"
+        ),
+        {"proposal_version_id": proposal_version_id},
+    ).scalar_one()
+    snapshot_count = session.execute(
+        sa.text("SELECT COUNT(*) FROM decision_recommendation_input_snapshots WHERE snapshot_id=:snapshot_id"),
+        {"snapshot_id": snapshot_id},
+    ).scalar_one()
+    trace_count = session.execute(
+        sa.text("SELECT COUNT(*) FROM decision_recommendation_traces WHERE trace_id=:trace_id"),
+        {"trace_id": trace_id},
+    ).scalar_one()
+    trace_entries_count = session.execute(
+        sa.text("SELECT COUNT(*) FROM decision_recommendation_trace_entries WHERE trace_id=:trace_id"),
+        {"trace_id": trace_id},
+    ).scalar_one()
+
+    assert proposal_count == 1
+    assert proposal_version_count == 1
+    assert snapshot_count == 1
+    assert trace_count == 1
+    assert trace_entries_count > 0
+
+
+def test_audit_trace_is_not_deleted_by_proposal_version_delete_postgres() -> None:
+    engine_sql = create_engine(settings.db_url)
+    data = build_input(scenario_catalog()["A_strong_positive"])
+
+    for _ in _with_seed(engine_sql, data):
+        with Session(engine_sql) as session:
+            engine = RecommendationDecisionEngine(
+                proposal_repository=SQLModelRecommendationProposalRepository(session),
+                version_repository=SQLModelRecommendationProposalVersionRepository(session),
+                snapshot_repository=SQLModelRecommendationSnapshotRepository(session),
+                reason_repository=SQLModelRecommendationReasonRepository(session),
+                trace_repository=SQLModelRecommendationTraceRepository(session),
+            )
+            generated = engine.generate_recommendation(data)
+
+            proposal_id = generated.proposal.proposal_id
+            proposal_version_id = generated.proposal_version.proposal_version_id
+            snapshot_id = generated.input_snapshot.snapshot_id
+            trace_id = generated.recommendation_trace.trace_id
+
+            with pytest.raises(IntegrityError):
+                session.execute(
+                    sa.text(
+                        """
+                        DELETE FROM decision_recommendation_proposal_versions
+                        WHERE proposal_version_id=:proposal_version_id
+                        """
+                    ),
+                    {"proposal_version_id": proposal_version_id},
+                )
+                session.commit()
+            session.rollback()
+
+            _assert_parent_and_trace_integrity(
+                session,
+                proposal_id=proposal_id,
+                proposal_version_id=proposal_version_id,
+                snapshot_id=snapshot_id,
+                trace_id=trace_id,
+            )
+
+            reconstruction = RecommendationReconstructionService(
+                proposal_repository=SQLModelRecommendationProposalRepository(session),
+                version_repository=SQLModelRecommendationProposalVersionRepository(session),
+                snapshot_repository=SQLModelRecommendationSnapshotRepository(session),
+                trace_repository=SQLModelRecommendationTraceRepository(session),
+                reason_repository=SQLModelRecommendationReasonRepository(session),
+                decision_repository=SQLModelInvestmentDecisionRepository(session),
+            )
+            lineage = reconstruction.reconstruct_by_proposal_version(proposal_version_id)
+            assert lineage.trace.trace_id == trace_id
+
+
+def test_audit_trace_is_not_deleted_by_snapshot_delete_postgres() -> None:
+    engine_sql = create_engine(settings.db_url)
+    data = build_input(scenario_catalog()["B_strong_negative"])
+
+    for _ in _with_seed(engine_sql, data):
+        with Session(engine_sql) as session:
+            engine = RecommendationDecisionEngine(
+                proposal_repository=SQLModelRecommendationProposalRepository(session),
+                version_repository=SQLModelRecommendationProposalVersionRepository(session),
+                snapshot_repository=SQLModelRecommendationSnapshotRepository(session),
+                reason_repository=SQLModelRecommendationReasonRepository(session),
+                trace_repository=SQLModelRecommendationTraceRepository(session),
+            )
+            generated = engine.generate_recommendation(data)
+
+            proposal_id = generated.proposal.proposal_id
+            proposal_version_id = generated.proposal_version.proposal_version_id
+            snapshot_id = generated.input_snapshot.snapshot_id
+            trace_id = generated.recommendation_trace.trace_id
+
+            with pytest.raises(IntegrityError):
+                session.execute(
+                    sa.text(
+                        "DELETE FROM decision_recommendation_input_snapshots WHERE snapshot_id=:snapshot_id"
+                    ),
+                    {"snapshot_id": snapshot_id},
+                )
+                session.commit()
+            session.rollback()
+
+            _assert_parent_and_trace_integrity(
+                session,
+                proposal_id=proposal_id,
+                proposal_version_id=proposal_version_id,
+                snapshot_id=snapshot_id,
+                trace_id=trace_id,
+            )
+
+            reconstruction = RecommendationReconstructionService(
+                proposal_repository=SQLModelRecommendationProposalRepository(session),
+                version_repository=SQLModelRecommendationProposalVersionRepository(session),
+                snapshot_repository=SQLModelRecommendationSnapshotRepository(session),
+                trace_repository=SQLModelRecommendationTraceRepository(session),
+                reason_repository=SQLModelRecommendationReasonRepository(session),
+                decision_repository=SQLModelInvestmentDecisionRepository(session),
+            )
+            lineage = reconstruction.reconstruct_by_proposal_version(proposal_version_id)
+            assert lineage.trace.trace_id == trace_id
+
+
+def test_direct_trace_deletion_cascades_only_owned_trace_entries_postgres() -> None:
+    engine_sql = create_engine(settings.db_url)
+    data = build_input(scenario_catalog()["D_missing_evidence"])
+
+    for _ in _with_seed(engine_sql, data):
+        with Session(engine_sql) as session:
+            engine = RecommendationDecisionEngine(
+                proposal_repository=SQLModelRecommendationProposalRepository(session),
+                version_repository=SQLModelRecommendationProposalVersionRepository(session),
+                snapshot_repository=SQLModelRecommendationSnapshotRepository(session),
+                reason_repository=SQLModelRecommendationReasonRepository(session),
+                trace_repository=SQLModelRecommendationTraceRepository(session),
+            )
+            generated = engine.generate_recommendation(data)
+            trace_id = generated.recommendation_trace.trace_id
+
+            entries_before = session.execute(
+                sa.text("SELECT COUNT(*) FROM decision_recommendation_trace_entries WHERE trace_id=:trace_id"),
+                {"trace_id": trace_id},
             ).scalar_one()
-            assert trace_count == 1
+            assert entries_before > 0
+
+            session.execute(
+                sa.text("DELETE FROM decision_recommendation_traces WHERE trace_id=:trace_id"),
+                {"trace_id": trace_id},
+            )
+            session.commit()
+
+            trace_after = session.execute(
+                sa.text("SELECT COUNT(*) FROM decision_recommendation_traces WHERE trace_id=:trace_id"),
+                {"trace_id": trace_id},
+            ).scalar_one()
+            entries_after = session.execute(
+                sa.text("SELECT COUNT(*) FROM decision_recommendation_trace_entries WHERE trace_id=:trace_id"),
+                {"trace_id": trace_id},
+            ).scalar_one()
+            proposal_after = session.execute(
+                sa.text("SELECT COUNT(*) FROM decision_recommendation_proposals WHERE proposal_id=:proposal_id"),
+                {"proposal_id": generated.proposal.proposal_id},
+            ).scalar_one()
+
+            assert trace_after == 0
+            assert entries_after == 0
+            assert proposal_after == 1

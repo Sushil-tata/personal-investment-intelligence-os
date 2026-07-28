@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 import json
+import re
 
 from piios.decision_contracts.application.decision_engine import RecommendationDecisionEngine
 from piios.decision_contracts.application.scoring_components import PortfolioContextSnapshot, RecommendationEngineInput
@@ -62,6 +63,8 @@ class RecommendationReplayVerificationService:
 
         persisted_action = str(payload.get("strategy_result", {}).get("action", ""))
         persisted_overall_score = float(payload.get("strategy_result", {}).get("overall_score", 0.0))
+        persisted_proposal_action = lineage.proposal_version.action_proposal.action.value
+        persisted_proposal_score = _extract_score_from_action_note(lineage.proposal_version.action_proposal.note)
 
         persisted_explanation = {
             "recommendation": str(payload.get("explanation", {}).get("recommendation", "")),
@@ -94,10 +97,23 @@ class RecommendationReplayVerificationService:
         )
         _append_diff(
             differences,
+            "persisted_proposal.action",
+            persisted_proposal_action,
+            evaluation.strategy_result.action.value,
+        )
+        _append_diff(
+            differences,
             "overall_score",
             f"{persisted_overall_score:.6f}",
             f"{evaluation.strategy_result.overall_score:.6f}",
         )
+        if persisted_proposal_score is not None:
+            _append_diff(
+                differences,
+                "persisted_proposal.overall_score",
+                f"{persisted_proposal_score:.6f}",
+                f"{evaluation.strategy_result.overall_score:.6f}",
+            )
         _append_diff(
             differences,
             "deterministic_input_hash",
@@ -282,3 +298,12 @@ def _input_from_snapshot_payload(canonical_payload_json: str) -> RecommendationE
 
 def _parse_dt(value: str) -> datetime:
     return datetime.fromisoformat(value)
+
+
+def _extract_score_from_action_note(note: str | None) -> float | None:
+    if not note:
+        return None
+    match = re.search(r"score=([0-9]+(?:\.[0-9]+)?)", note)
+    if match is None:
+        return None
+    return float(match.group(1))
