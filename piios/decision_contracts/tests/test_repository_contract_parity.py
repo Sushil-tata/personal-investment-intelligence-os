@@ -24,6 +24,7 @@ from piios.decision_contracts.domain.proposal import (
 from piios.decision_contracts.domain.value_objects import (
     ActionProposal,
     ConfidenceBreakdown,
+    PositionSizeRange,
     RecommendationConfidenceDimensions,
     RecommendationPriority,
     ReasonWeight,
@@ -273,3 +274,53 @@ def test_contract_ordering_for_reason_and_trace(repo_bundle) -> None:
         )
     )
     assert [row.evidence_link_id for row in trace_repo.list_evidence_links("pv1")] == ["ev1", "ev2"]
+
+
+def test_contract_decision_roundtrip_for_modified_and_overridden_states(repo_bundle) -> None:
+    proposal_repo = repo_bundle["proposal"]
+    version_repo = repo_bundle["version"]
+    decision_repo = repo_bundle["decision"]
+
+    proposal_repo.create(_proposal("p1"))
+    version_repo.create(_version("pv1", "p1", 1))
+
+    modified = InvestmentDecision(
+        decision_id="d1",
+        proposal_version_id="pv1",
+        state=DecisionState.MODIFIED,
+        reason_code="ADJUST_SIZE",
+        decided_at=datetime(2026, 7, 27, 10, 0, 0, tzinfo=timezone.utc),
+        modified_action=ActionProposal(
+            action=RecommendationAction.HOLD,
+            position_size_range=PositionSizeRange(0.01, 0.03),
+            note="reduce concentration",
+        ),
+    )
+    overridden = InvestmentDecision(
+        decision_id="d2",
+        proposal_version_id="pv1",
+        state=DecisionState.OVERRIDDEN,
+        reason_code="ALTERNATIVE_BETTER",
+        decided_at=datetime(2026, 7, 27, 10, 1, 0, tzinfo=timezone.utc),
+        preferred_alternative_target_key="AMD",
+    )
+
+    decision_repo.create(modified)
+    decision_repo.create(overridden)
+
+    rows = decision_repo.list_for_proposal_version("pv1")
+    assert [row.decision_id for row in rows] == ["d1", "d2"]
+
+    modified_row = decision_repo.get("d1")
+    assert modified_row is not None
+    assert modified_row.modified_action is not None
+    assert modified_row.modified_action.action == RecommendationAction.HOLD
+    assert modified_row.modified_action.position_size_range == PositionSizeRange(0.01, 0.03)
+    assert modified_row.preferred_alternative_target_key is None
+
+    overridden_row = decision_repo.get_latest_for_proposal_version("pv1")
+    assert overridden_row is not None
+    assert overridden_row.state == DecisionState.OVERRIDDEN
+    assert overridden_row.preferred_alternative_target_key == "AMD"
+    assert overridden_row.modified_action is None
+    assert overridden_row.modified_position_size is None

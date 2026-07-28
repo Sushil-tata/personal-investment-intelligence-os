@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from sqlalchemy import Column, ForeignKey, Index, UniqueConstraint
+from sqlalchemy import CheckConstraint, Column, ForeignKey, Index, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 
@@ -236,6 +236,38 @@ class InvestmentDecisionEntity(SQLModel, table=True):
         UniqueConstraint("decision_id", name="uq_decision_investment_decisions_decision_id"),
         Index("ix_decision_investment_decisions_version", "proposal_version_id", "decided_at"),
         Index("ix_decision_investment_decisions_state", "state"),
+        CheckConstraint(
+            "state != 'MODIFIED' OR modified_action IS NOT NULL OR (modified_position_min_weight IS NOT NULL AND modified_position_max_weight IS NOT NULL)",
+            name="ck_decision_modified_requires_payload",
+        ),
+        CheckConstraint(
+            "state = 'MODIFIED' OR (modified_action IS NULL AND modified_action_note IS NULL AND modified_action_min_weight IS NULL AND modified_action_max_weight IS NULL AND modified_position_min_weight IS NULL AND modified_position_max_weight IS NULL)",
+            name="ck_decision_non_modified_forbids_payload",
+        ),
+        CheckConstraint(
+            "state != 'OVERRIDDEN' OR (preferred_alternative_target_key IS NOT NULL AND trim(preferred_alternative_target_key) != '')",
+            name="ck_decision_overridden_requires_alternative",
+        ),
+        CheckConstraint(
+            "state = 'OVERRIDDEN' OR preferred_alternative_target_key IS NULL",
+            name="ck_decision_non_overridden_forbids_alternative",
+        ),
+        CheckConstraint(
+            "(modified_action_min_weight IS NULL AND modified_action_max_weight IS NULL) OR (modified_action_min_weight IS NOT NULL AND modified_action_max_weight IS NOT NULL)",
+            name="ck_decision_modified_action_weight_pair",
+        ),
+        CheckConstraint(
+            "(modified_position_min_weight IS NULL AND modified_position_max_weight IS NULL) OR (modified_position_min_weight IS NOT NULL AND modified_position_max_weight IS NOT NULL)",
+            name="ck_decision_modified_position_weight_pair",
+        ),
+        CheckConstraint(
+            "modified_action_min_weight IS NULL OR modified_action_max_weight IS NULL OR modified_action_min_weight <= modified_action_max_weight",
+            name="ck_decision_modified_action_weight_order",
+        ),
+        CheckConstraint(
+            "modified_position_min_weight IS NULL OR modified_position_max_weight IS NULL OR modified_position_min_weight <= modified_position_max_weight",
+            name="ck_decision_modified_position_weight_order",
+        ),
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
