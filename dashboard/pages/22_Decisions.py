@@ -1,67 +1,93 @@
 import streamlit as st
 
 from lib import api_client as api
-from lib import ui
+from lib import components as ui
 
 st.set_page_config(page_title="PIIOS — Decisions", layout="wide")
-ui.page_header("Decisions")
+ui.inject_base_styles()
+ui.page_header("Decisions", "Human decision capture on Recommendation Proposals.")
 
-st.info(
-    "This screen captures a **Human Decision** on a Recommendation Proposal. A decision is not a trade — "
-    "PIIOS remains advisory-only and has no execution capability.",
-    icon="ℹ️",
-)
+ui.pipeline_flow([("Recommendation Proposal", False), ("Human Decision", False), ("Future Execution", True)])
+st.caption("A decision is never a trade. PIIOS remains advisory-only and has no execution capability — the "
+           "final pipeline step above is permanently disabled.")
 
 STATUS_OPTIONS = ["DRAFT", "RESEARCHED", "RISK_CHECKED", "PENDING_REVIEW", "APPROVED", "ARCHIVED"]
+STATUS_MEANING = {
+    "DRAFT": "Proposal generated, not yet reviewed by any human.",
+    "RESEARCHED": "Supporting research has been attached or reviewed.",
+    "RISK_CHECKED": "Reviewed against portfolio risk/IPS constraints.",
+    "PENDING_REVIEW": "Awaiting an explicit human accept/reject decision.",
+    "APPROVED": "A human has approved this proposal for the advisory record.",
+    "ARCHIVED": "Rejected, superseded, or otherwise closed out.",
+}
 
 recos = api.get_recommendation_queue()
 
 
 def _decision_ui(data):
     if not data:
-        st.info("No recommendations are currently awaiting review.")
+        ui.empty_state_card("No recommendations are currently awaiting review.")
         return
 
-    options = {f"{r.ticker} — {ui.status_badge(r.status)} (id {r.recommendation_id})": r for r in data}
+    options = {f"{r.ticker} — {r.status} (id {r.recommendation_id})": r for r in data}
     choice = st.selectbox("Select a recommendation proposal", list(options.keys()))
     reco = options[choice]
 
-    with st.expander("Proposal detail", expanded=True):
-        st.write(f"**Bull case:** {reco.bull_case}")
-        st.write(f"**Bear case:** {reco.bear_case}")
-        st.write(f"**Position size suggestion:** {reco.position_size_suggestion}")
-        st.write(f"**Confidence:** {reco.confidence_score:.0f} · **Portfolio fit:** {reco.portfolio_fit_score:.0f}")
+    ui.section_header("Proposal")
+    ui.recommendation_card(reco.ticker, reco.status, reco.confidence_score, reco.portfolio_fit_score, reco.bull_case)
 
-    st.subheader("Record a decision")
+    ui.section_header("Decision Status & Meaning")
+    st.write(f"Current status: {ui.status_badge(reco.status)}")
+    st.caption(STATUS_MEANING.get(reco.status, "—"))
+
+    ui.section_header("Reviewer")
+    ui.metric_tile("Approved By", reco.approved_by or "—")
+
+    ui.section_header("Timeline")
+    ui.decision_timeline([
+        ui.TimelineEvent("Proposal created", reco.created_at),
+        ui.TimelineEvent("Proposal last updated", reco.updated_at),
+        ui.TimelineEvent("Human decision recorded here", None, f"Reviewer: {reco.approved_by or 'pending'}"),
+        ui.TimelineEvent("Trade execution", None, "Not available — advisory-only product", future=True),
+    ])
+
+    ui.section_header("Record a Decision")
     with st.form(key=f"decision_form_{reco.recommendation_id}"):
-        new_status = st.selectbox("Decision status (maps to the backend's recommendation status field)", STATUS_OPTIONS,
+        new_status = st.selectbox("Decision status (maps to the backend's recommendation status field)",
+                                   STATUS_OPTIONS,
                                    index=STATUS_OPTIONS.index(reco.status) if reco.status in STATUS_OPTIONS else 0)
+        st.caption(STATUS_MEANING.get(new_status, ""))
         reviewer = st.text_input("Reviewer (your name)")
         st.text_area("Rationale / override reason (for your own records)", disabled=True,
-                      help="Not supported by the backend yet — see the gap notice below. Nothing typed here is saved.")
+                      help="Not supported by the backend yet. Nothing typed here is saved.")
         st.number_input("Position size actually approved (for your own records)", min_value=0.0, disabled=True,
-                         help="Not supported by the backend yet — see the gap notice below. Nothing typed here is saved.")
+                         help="Not supported by the backend yet. Nothing typed here is saved.")
         submitted = st.form_submit_button("Submit decision")
 
     if submitted:
         result = api.update_recommendation_status(reco.recommendation_id, new_status, reviewer or None)
         if result.ok:
-            st.success(f"Status updated to {new_status} for {reco.ticker}. Reviewer recorded as approved_by="
-                       f"'{reviewer or None}'. Rerun the page to see the updated queue.")
+            st.success(f"Status updated to {new_status} for {reco.ticker}. Reviewer recorded as "
+                       f"approved_by='{reviewer or None}'. Rerun the page to see the updated queue.")
         else:
-            st.error(f"Decision was not saved: {result.error}")
+            ui.error_state_card(f"Decision was not saved: {result.error}")
+
+    ui.section_header("Audit History")
+    ui.disabled_card("Immutable decision history", "The backend persists only the current status/approver — "
+                      "not a full, versioned, immutable history of every decision made on this proposal.")
+
+    ui.section_header("Diagnostic Summary")
+    ui.disabled_card("Decision diagnostics", "Diagnostics such as time-to-decision, reviewer workload, or "
+                      "decisions overridden after risk checks are not computed by the backend yet.")
 
 
 ui.render(recos, _decision_ui)
 
 st.divider()
 ui.api_gap_notice(
-    "The backend exposes a single generic status field (`PATCH /recommendations/{id}/status`, values DRAFT / "
-    "RESEARCHED / RISK_CHECKED / PENDING_REVIEW / APPROVED / ARCHIVED) plus an `approved_by` string — that is "
-    "all a decision can persist today. There is no support yet for: accept-vs-partially-accept-vs-reject-vs-"
-    "defer-vs-request-further-research as distinct decision types, a captured rationale or override reason, "
-    "a specific approved position size, a linked proposal *version*, or an immutable decision history/audit "
-    "trail. The disabled fields above are shown so the intended richer workflow is visible, but nothing typed "
-    "into them is sent to the backend or persisted anywhere — that would mean inventing a substitute backend "
-    "contract, which this frontend must not do."
+    "The backend exposes a single generic status field plus an optional approver name — that is all a "
+    "decision can persist today. Distinct decision types (accept / partially accept / reject / defer / "
+    "request further research / override), a captured rationale or override reason, a specific approved "
+    "position size, a proposal-version-linked decision, and an immutable decision audit trail are not yet "
+    "available. See dashboard/API_CONTRACT_REQUESTS.md for the concrete contract this page needs."
 )

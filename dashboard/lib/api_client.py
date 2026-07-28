@@ -100,7 +100,7 @@ def _map(result: ApiResult, fn: Callable[[Any], T]) -> ApiResult:
         return result
     try:
         return ApiResult(ok=True, data=fn(result.data), status_code=result.status_code)
-    except (KeyError, TypeError) as exc:
+    except (KeyError, TypeError, AttributeError, IndexError) as exc:
         return ApiResult(ok=False, error=f"Unexpected response shape from backend: {exc}")
 
 
@@ -196,8 +196,11 @@ def get_net_worth() -> ApiResult:
         net_worth=d["net_worth"], breakdown=[m.NetWorthItem(**b) for b in d["breakdown"]]))
 
 
-def get_allocation() -> ApiResult:
-    return _map(get_json("/portfolio/allocation"), lambda d: m.AllocationResponse(
+def get_allocation(dimension: str = "asset_class") -> ApiResult:
+    """dimension must be one of: asset_class, sector, theme, bucket, geography
+    (the only values the backend's PortfolioLayersService.allocation() accepts;
+    anything else silently falls back to asset_class server-side)."""
+    return _map(get_json("/portfolio/allocation", params={"dimension": dimension}), lambda d: m.AllocationResponse(
         total_value=d["total_value"], items=[m.AllocationItem(**i) for i in d["items"]]))
 
 

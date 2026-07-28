@@ -70,11 +70,16 @@ class _FakeResponse:
     def __init__(self, status_code=200, json_data=None):
         self.status_code = status_code
         self._json_data = json_data
-        self.text = ""
+        self.text = str(json_data) if json_data is not None else ""
         self.content = b"x" if json_data is not None else b""
 
     def json(self):
         return self._json_data
+
+
+# Endpoints considered "down" in partial-backend mode: risk and identity
+# resolution issues are unavailable, everything else responds normally.
+_PARTIAL_MODE_DOWN_PATHS = {"/risk", "/identity/resolution-issues"}
 
 
 def _fixture_router(mode):
@@ -84,6 +89,11 @@ def _fixture_router(mode):
         path = url.split("/api/v1", 1)[-1]
         if path == "" or path == "/":
             path = "/health"
+        if mode == "partial" and path in _PARTIAL_MODE_DOWN_PATHS:
+            return _FakeResponse(500, {"detail": "temporarily unavailable"})
+        if mode == "malformed":
+            # Return a shape missing the fields every parser expects, on every path.
+            return _FakeResponse(200, {"unexpected_field": True})
         if mode == "empty":
             data = [] if isinstance(FIXTURES.get(path), list) else {}
         else:
@@ -107,7 +117,7 @@ PAGES = [
 
 
 @pytest.mark.parametrize("page", PAGES)
-@pytest.mark.parametrize("mode", ["healthy", "unreachable", "empty"])
+@pytest.mark.parametrize("mode", ["healthy", "unreachable", "empty", "partial", "malformed"])
 def test_page_renders_without_exception(monkeypatch, page, mode):
     monkeypatch.setattr(requests, "request", _fixture_router(mode))
     at = AppTest.from_file(str(DASHBOARD_ROOT / page))

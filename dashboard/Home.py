@@ -1,99 +1,155 @@
 import streamlit as st
 
 from lib import api_client as api
-from lib import ui
+from lib import components as ui
 
 st.set_page_config(page_title="PIIOS — Overview", layout="wide")
-ui.page_header("Personal Investment Intelligence OS", "Overview — advisory-only and research-only. No execution capabilities.")
-
-col1, col2, col3, col4 = st.columns(4)
+ui.inject_base_styles()
+ui.page_header("Personal Investment Intelligence OS", "CIO Overview — advisory-only and research-only. No execution capabilities.")
 
 net_worth = api.get_net_worth()
 portfolio = api.get_portfolio()
 drift = api.get_portfolio_drift()
 reco_queue = api.get_recommendation_queue()
+recos_all = api.get_recommendations()
 watchlist = api.get_watchlist()
 ips = api.get_ips_constraints()
+tactical = api.get_tactical_signals()
+issues = api.get_resolution_issues(limit=200)
+allocation = api.get_allocation(dimension="asset_class")
 
-with col1:
+# --- Row 1: top-line KPIs -------------------------------------------------
+ui.section_header("Portfolio Snapshot")
+r1 = st.columns(6)
+
+with r1[0]:
     if net_worth.ok and not net_worth.is_empty:
         st.metric("Net Worth", f"${net_worth.data.net_worth:,.0f}")
-    elif not net_worth.ok:
-        st.metric("Net Worth", "—")
     else:
-        st.metric("Net Worth", "$0")
+        st.metric("Net Worth", "—")
 
-with col2:
+with r1[1]:
     if portfolio.ok and not portfolio.is_empty:
         total = sum(s.total_value for s in portfolio.data)
-        st.metric("Total Portfolio Value", f"${total:,.0f}", help=f"Across {len(portfolio.data)} snapshot(s)")
+        st.metric("Portfolio Value", f"${total:,.0f}")
     else:
-        st.metric("Total Portfolio Value", "—")
+        st.metric("Portfolio Value", "—")
 
-with col3:
-    if reco_queue.ok:
-        st.metric("Recommendations Awaiting Review", len(reco_queue.data) if reco_queue.data else 0)
-    else:
-        st.metric("Recommendations Awaiting Review", "—")
+with r1[2]:
+    st.metric("Today's Change", "—", help="No daily/historical P&L endpoint exists in the backend yet.")
 
-with col4:
-    if watchlist.ok:
-        st.metric("Watchlist Ideas", len(watchlist.data) if watchlist.data else 0)
+with r1[3]:
+    st.metric("Recommendations", len(reco_queue.data) if reco_queue.ok and reco_queue.data else 0)
+
+with r1[4]:
+    gov_count = (len(issues.data) if issues.ok and issues.data else 0)
+    st.metric("Governance Issues", gov_count, help="Unresolved identity-resolution issues.")
+
+with r1[5]:
+    if ips.ok and not ips.is_empty:
+        elevated = [c for c in ips.data.constraints if c.severity.upper() in ("HIGH", "CRITICAL")]
+        st.metric("IPS Status", "⚠️ Attention" if elevated else "✅ Clear", help=f"{len(ips.data.constraints)} constraints tracked")
     else:
-        st.metric("Watchlist Ideas", "—")
+        st.metric("IPS Status", "—")
 
 st.divider()
 
-left, right = st.columns(2)
+# --- Row 2: allocation / drift / watchlists / tactical --------------------
+ui.section_header("Positioning")
+r2 = st.columns(4)
 
-with left:
-    st.subheader("Net Worth Breakdown")
-    def _net_worth_table(data):
-        import pandas as pd
-        st.dataframe(
-            pd.DataFrame([{"Category": b.category, "Value": b.value} for b in data.breakdown]),
-            use_container_width=True, hide_index=True,
-        )
-        st.caption(f"Total assets ${data.total_assets:,.0f} · total liabilities ${data.total_liabilities:,.0f}")
-    ui.render(net_worth, _net_worth_table)
+with r2[0]:
+    st.markdown("**Allocation (Asset Class)**")
 
-    st.subheader("Rebalancing Alerts")
+    def _alloc(data):
+        labels = [i.key for i in data.items]
+        values = [i.percentage for i in data.items]
+        ui.allocation_donut(labels, values)
+
+    ui.render(allocation, _alloc)
+
+with r2[1]:
+    st.markdown("**Drift Alerts**")
+
     def _drift_alerts(data):
         high = [i for i in data.items if i.severity.upper() == "HIGH"]
         if not high:
             st.success("No high-severity drift detected.")
         else:
-            for item in high[:5]:
-                st.warning(f"**{item.dimension} / {item.key}** — drift {item.drift_percentage:+.1f}pp · {item.recommended_action}")
-        st.caption("Full detail in Portfolio Drift Dashboard / Rebalancing.")
+            for item in high[:4]:
+                st.warning(f"**{item.dimension} / {item.key}** — {item.drift_percentage:+.1f}pp")
+        st.caption("Full detail in Rebalancing.")
+
     ui.render(drift, _drift_alerts)
 
-with right:
-    st.subheader("Governance Signals")
-    def _ips_table(data):
-        breached = [c for c in data.constraints if not c.enabled or c.severity.upper() in ("HIGH", "CRITICAL")]
-        st.write(f"{len(data.constraints)} IPS constraints tracked.")
-        if breached:
-            for c in breached[:5]:
-                st.warning(f"**{c.name}** — {c.rule_type} threshold {c.threshold_value} ({ui.severity_badge(c.severity)})")
-        else:
-            st.success("No elevated-severity IPS constraints flagged.")
-    ui.render(ips, _ips_table)
-    ui.api_gap_notice(
-        "A general-purpose governance backlog (replay mismatches, stale evidence, traceability gaps, "
-        "overdue decision reviews) is not yet available from the backend on this branch. This card shows "
-        "only what identity/IPS data currently exists."
-    )
+with r2[2]:
+    st.markdown("**Watchlists**")
 
-    st.subheader("Recommendations Snapshot")
-    def _reco_table(data):
+    def _watchlist(data):
+        st.metric("Ideas Tracked", len(data))
+        for w in data[:4]:
+            st.write(f"- {w.ticker}: {w.note}")
+
+    ui.render(watchlist, _watchlist)
+
+with r2[3]:
+    st.markdown("**Tactical Signals**")
+
+    def _tactical(data):
+        st.metric("Active Signals", len(data))
+        for s in data[:4]:
+            st.write(f"- {s.ticker}: {s.status}")
+
+    ui.render(tactical, _tactical)
+
+st.divider()
+
+# --- Row 3: recommendation queue / recent decisions / governance queue ----
+ui.section_header("Decision Workflow")
+r3 = st.columns(3)
+
+with r3[0]:
+    st.markdown("**Recommendation Queue**")
+
+    def _queue(data):
         if not data:
             st.info("No recommendations currently in the queue.")
             return
         for r in data[:5]:
-            st.write(f"**{r.ticker}** — {ui.status_badge(r.status)} · confidence {r.confidence_score:.0f} · fit {r.portfolio_fit_score:.0f}")
+            ui.recommendation_card(r.ticker, r.status, r.confidence_score, r.portfolio_fit_score, r.why_now)
         st.caption("Full detail in Recommendation Review. All items are proposals, not decisions or executions.")
-    ui.render(reco_queue, _reco_table)
+
+    ui.render(reco_queue, _queue)
+
+with r3[1]:
+    st.markdown("**Recent Decisions**")
+
+    def _recent_decisions(data):
+        decided = sorted([r for r in data if r.status in ("APPROVED", "ARCHIVED")],
+                          key=lambda r: r.updated_at, reverse=True)
+        if not decided:
+            st.info("No recommendations have reached a decided status yet.")
+            return
+        for r in decided[:5]:
+            st.write(f"{ui.status_badge(r.status)} **{r.ticker}** — updated {r.updated_at}")
+        st.caption("Approximated from recommendation status changes — the backend has no dedicated decision "
+                   "log yet (see API_GAPS.md).")
+
+    ui.render(recos_all, _recent_decisions)
+
+with r3[2]:
+    st.markdown("**Governance Queue**")
+
+    def _gov_queue(data):
+        if not data:
+            st.success("No unresolved identity-resolution issues.")
+            return
+        for issue in data[:5]:
+            ui.governance_issue_card(f"{issue.source_record_type} `{issue.source_record_id}`", "MEDIUM",
+                                      issue.status, issue.reason)
+        st.caption("Full governance detail in the Governance Console.")
+
+    ui.render(issues, _gov_queue)
 
 st.divider()
 ui.advisory_banner()
