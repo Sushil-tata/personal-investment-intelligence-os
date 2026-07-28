@@ -25,6 +25,17 @@ from .recommendation_reconstruction_service import (
     UnknownDecisionProposalVersionError,
     UnsupportedTraceSchemaVersionError,
 )
+from .decision_capture_service import (
+    DecisionCaptureError,
+    DecisionCaptureRequest,
+    DecisionCaptureService,
+    DecisionPersistenceError,
+    DecisionType,
+    InvalidDecisionPayloadError,
+    RepositoryAccessError,
+    UnknownProposalError,
+    UnknownProposalVersionError,
+)
 from .strategies import (
     StrategyResult,
     WeightedComponentScore,
@@ -40,6 +51,15 @@ __all__ = [
     "RecommendationGenerationResult",
     "RecommendationReconstructionService",
     "RecommendationDecisionLineage",
+    "DecisionCaptureError",
+    "DecisionCaptureRequest",
+    "DecisionCaptureService",
+    "DecisionPersistenceError",
+    "DecisionType",
+    "InvalidDecisionPayloadError",
+    "RepositoryAccessError",
+    "UnknownProposalError",
+    "UnknownProposalVersionError",
     "MissingTraceError",
     "MissingInputSnapshotError",
     "IncompleteTraceError",
