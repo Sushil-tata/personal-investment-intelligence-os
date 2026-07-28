@@ -457,3 +457,83 @@ class GovernanceReviewBacklog:
     items: list[GovernanceReviewItem]
     generated_at: str
     advisory_only: bool = True
+
+
+# --- Wave 3 recommendation MVP models --------------------------------------
+
+
+@dataclass
+class PortfolioObservation:
+    code: str
+    severity: str
+    detail: str
+
+
+@dataclass
+class RecommendationScoreComponent:
+    name: str
+    value: float | None
+    weight: float
+    status: str
+    explanation: str
+
+
+@dataclass
+class RecommendationEvidence:
+    code: str
+    detail: str
+    source: str
+
+
+@dataclass
+class RecommendationLimitation:
+    code: str
+    detail: str
+    severity: str
+
+
+@dataclass
+class AllocationRecommendation:
+    action: str
+    ticker: str
+    instrument_name: str
+    portfolio_role: str
+    current_value: float
+    current_weight: float
+    proposed_allocation: float
+    proposed_total_value: float
+    post_weight: float
+    score: float
+    confidence: float
+    market_data_provider: str
+    market_data_mode: str
+    market_data_as_of: str | None
+    is_stale: bool
+    fallback_reason: str | None
+    seeded_input: bool
+    rationale: str
+    diversification_contribution: str
+    risks: list[str]
+    unavailable_inputs: list[str]
+    conditions_to_change: list[str]
+    components: list[RecommendationScoreComponent]
+    evidence: list[RecommendationEvidence]
+
+
+@dataclass
+class PortfolioRecommendationResponse:
+    recommendation_id: str
+    status: str
+    as_of_timestamp: str
+    market_data_provider: str
+    market_data_mode: str
+    input_freshness: str
+    investable_amount: float
+    allocation_total: float
+    allocation_difference: float
+    overall_confidence: float
+    advisory_only: bool
+    portfolio_observations: list[PortfolioObservation]
+    recommendations: list[AllocationRecommendation]
+    assumptions: list[str]
+    limitations: list[RecommendationLimitation]

@@ -250,6 +250,73 @@ def get_tactical_signals() -> ApiResult:
     return _map(get_json("/tactical-signals"), lambda d: [_tactical_signal(s) for s in d])
 
 
+def generate_investment_recommendation(
+    investable_amount: float = 5000.0,
+    market_data_mode: str = "auto",
+    use_demo_portfolio: bool = True,
+    portfolio_snapshot_id: str | None = None,
+    as_of_date: str | None = None,
+    mandate_override: dict | None = None,
+) -> ApiResult:
+    body = {
+        "portfolio_snapshot_id": portfolio_snapshot_id,
+        "investable_amount": investable_amount,
+        "as_of_date": as_of_date,
+        "market_data_mode": market_data_mode,
+        "use_demo_portfolio": use_demo_portfolio,
+        "mandate_override": mandate_override,
+    }
+
+    def _parse(d):
+        return m.PortfolioRecommendationResponse(
+            recommendation_id=d["recommendation_id"],
+            status=d["status"],
+            as_of_timestamp=d["as_of_timestamp"],
+            market_data_provider=d["market_data_provider"],
+            market_data_mode=d["market_data_mode"],
+            input_freshness=d["input_freshness"],
+            investable_amount=d["investable_amount"],
+            allocation_total=d["allocation_total"],
+            allocation_difference=d["allocation_difference"],
+            overall_confidence=d["overall_confidence"],
+            advisory_only=d.get("advisory_only", True),
+            portfolio_observations=[m.PortfolioObservation(**o) for o in d["portfolio_observations"]],
+            recommendations=[
+                m.AllocationRecommendation(
+                    action=row["action"],
+                    ticker=row["ticker"],
+                    instrument_name=row["instrument_name"],
+                    portfolio_role=row["portfolio_role"],
+                    current_value=row["current_value"],
+                    current_weight=row["current_weight"],
+                    proposed_allocation=row["proposed_allocation"],
+                    proposed_total_value=row["proposed_total_value"],
+                    post_weight=row["post_weight"],
+                    score=row["score"],
+                    confidence=row["confidence"],
+                    market_data_provider=row["market_data_provider"],
+                    market_data_mode=row["market_data_mode"],
+                    market_data_as_of=row.get("market_data_as_of"),
+                    is_stale=row.get("is_stale", False),
+                    fallback_reason=row.get("fallback_reason"),
+                    seeded_input=row.get("seeded_input", False),
+                    rationale=row["rationale"],
+                    diversification_contribution=row["diversification_contribution"],
+                    risks=list(row.get("risks", [])),
+                    unavailable_inputs=list(row.get("unavailable_inputs", [])),
+                    conditions_to_change=list(row.get("conditions_to_change", [])),
+                    components=[m.RecommendationScoreComponent(**c) for c in row.get("components", [])],
+                    evidence=[m.RecommendationEvidence(**e) for e in row.get("evidence", [])],
+                )
+                for row in d["recommendations"]
+            ],
+            assumptions=list(d.get("assumptions", [])),
+            limitations=[m.RecommendationLimitation(**l) for l in d.get("limitations", [])],
+        )
+
+    return _map(_request("POST", "/recommendations/generate", json=body), _parse)
+
+
 # --- Risk / governance / research ------------------------------------------
 
 def get_risk_limits() -> ApiResult:
