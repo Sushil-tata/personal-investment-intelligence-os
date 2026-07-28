@@ -139,3 +139,63 @@ def test_update_recommendation_status_sends_patch(monkeypatch):
     assert captured["method"] == "PATCH"
     assert captured["json"] == {"status": "APPROVED", "approved_by": "sushil"}
     assert result.data.status == "APPROVED"
+
+
+def test_generate_investment_recommendation_parses_typed_response(monkeypatch):
+    payload = {
+        "recommendation_id": "wave3-1",
+        "status": "READY",
+        "as_of_timestamp": "2026-07-28T00:00:00Z",
+        "market_data_provider": "development_seed",
+        "market_data_mode": "DEVELOPMENT_SEED",
+        "input_freshness": "DEVELOPMENT_SEED",
+        "investable_amount": 5000.0,
+        "allocation_total": 5000.0,
+        "allocation_difference": 0.0,
+        "overall_confidence": 0.61,
+        "advisory_only": True,
+        "portfolio_observations": [{"code": "INDIA_CONCENTRATION", "severity": "HIGH", "detail": "high"}],
+        "recommendations": [
+            {
+                "action": "BUY",
+                "ticker": "VXUS",
+                "instrument_name": "Vanguard Total International Stock ETF",
+                "portfolio_role": "Ex-US Diversifier",
+                "current_value": 0.0,
+                "current_weight": 0.0,
+                "proposed_allocation": 2000.0,
+                "proposed_total_value": 2000.0,
+                "post_weight": 0.1,
+                "score": 79.0,
+                "confidence": 0.62,
+                "market_data_provider": "development_seed",
+                "market_data_mode": "DEVELOPMENT_SEED",
+                "market_data_as_of": "2026-07-28T00:00:00Z",
+                "is_stale": True,
+                "fallback_reason": "seed",
+                "seeded_input": True,
+                "rationale": "Diversify",
+                "diversification_contribution": "Adds ex-US",
+                "risks": ["seed"],
+                "unavailable_inputs": [],
+                "conditions_to_change": ["rerun"],
+                "components": [],
+                "evidence": [],
+            }
+        ],
+        "assumptions": ["long horizon"],
+        "limitations": [{"code": "DEVELOPMENT_SEED", "detail": "seeded", "severity": "WARNING"}],
+    }
+    monkeypatch.setattr(requests, "request", lambda method, url, **kw: _FakeResponse(200, payload))
+    result = api.generate_investment_recommendation(5000.0, "development_seed", True)
+    assert result.ok is True
+    assert result.data.recommendation_id == "wave3-1"
+    assert abs(result.data.allocation_total - 5000.0) < 1e-9
+    assert result.data.recommendations[0].action == "BUY"
+
+
+def test_generate_investment_recommendation_backend_error(monkeypatch):
+    monkeypatch.setattr(requests, "request", lambda method, url, **kw: _FakeResponse(422, {"detail": "bad amount"}))
+    result = api.generate_investment_recommendation(-1.0)
+    assert result.ok is False
+    assert result.status_code == 422

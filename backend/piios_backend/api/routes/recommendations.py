@@ -4,7 +4,9 @@ from fastapi.responses import PlainTextResponse
 
 from piios_backend.schemas.operations import CSVImportResponse
 from piios_backend.schemas.recommendation import (
+    PortfolioRecommendationResponse,
     Recommendation,
+    RecommendationGenerateRequest,
     RecommendationQueueResponse,
     RecommendationStatusUpdateRequest,
     TopRecommendation,
@@ -12,6 +14,7 @@ from piios_backend.schemas.recommendation import (
 from piios_backend.services.csv_io import from_csv, to_csv
 from piios_backend.services.in_memory_store import store
 from piios_backend.services.live_feeds import live_feeds
+from piios_backend.services.recommendation_mvp import recommendation_mvp_service
 
 
 router = APIRouter(prefix="/recommendations", tags=["recommendations"])
@@ -47,6 +50,27 @@ def top_recommendations(
     sector: str | None = Query(default=None),
 ) -> list[TopRecommendation]:
     return live_feeds.top_recommendations(limit=limit, sector=sector)
+
+
+@router.post("/generate", response_model=PortfolioRecommendationResponse)
+def generate_recommendation(request: RecommendationGenerateRequest) -> PortfolioRecommendationResponse:
+    try:
+        return recommendation_mvp_service.generate(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/demo", response_model=PortfolioRecommendationResponse)
+def generate_recommendation_demo() -> PortfolioRecommendationResponse:
+    return recommendation_mvp_service.generate(
+        RecommendationGenerateRequest(
+            investable_amount=5000.0,
+            market_data_mode="auto",
+            use_demo_portfolio=True,
+        )
+    )
 
 
 @router.patch("/{recommendation_id}/status", response_model=Recommendation)
