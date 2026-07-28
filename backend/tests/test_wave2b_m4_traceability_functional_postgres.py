@@ -2,14 +2,17 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import datetime, timezone
+import json
 import uuid
 
 import pytest
 import sqlalchemy as sa
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, create_engine
 
 from piios.decision_contracts.application.decision_engine import RecommendationDecisionEngine
 from piios.decision_contracts.application.recommendation_reconstruction_service import RecommendationReconstructionService
+from piios.decision_contracts.application.recommendation_replay_verification_service import RecommendationReplayVerificationService
 from piios.decision_contracts.domain.decision import InvestmentDecision
 from piios.decision_contracts.domain.enums import DecisionState
 from piios.decision_contracts.infrastructure.in_memory_repositories import (
@@ -390,3 +393,129 @@ def test_scenario_f_parity_inmemory_vs_postgres() -> None:
         assert [row.entry_type for row in inmem_result.recommendation_trace.entries] == [row.entry_type for row in pg_result.recommendation_trace.entries]
         assert inmem_expl.recommendation_action == pg_expl.recommendation_action
         assert inmem_expl.summary_text == pg_expl.summary_text
+
+
+def test_replay_verification_pass_and_determinism_postgres() -> None:
+    engine_sql = create_engine(settings.db_url)
+    data = build_input(scenario_catalog()["A_strong_positive"])
+
+    for _ in _with_seed(engine_sql, data):
+        with Session(engine_sql) as session:
+            engine = RecommendationDecisionEngine(
+                proposal_repository=SQLModelRecommendationProposalRepository(session),
+                version_repository=SQLModelRecommendationProposalVersionRepository(session),
+                snapshot_repository=SQLModelRecommendationSnapshotRepository(session),
+                reason_repository=SQLModelRecommendationReasonRepository(session),
+                trace_repository=SQLModelRecommendationTraceRepository(session),
+            )
+            generated = engine.generate_recommendation(data)
+
+            reconstruction = RecommendationReconstructionService(
+                proposal_repository=SQLModelRecommendationProposalRepository(session),
+                version_repository=SQLModelRecommendationProposalVersionRepository(session),
+                snapshot_repository=SQLModelRecommendationSnapshotRepository(session),
+                trace_repository=SQLModelRecommendationTraceRepository(session),
+                reason_repository=SQLModelRecommendationReasonRepository(session),
+                decision_repository=SQLModelInvestmentDecisionRepository(session),
+            )
+            replay = RecommendationReplayVerificationService(reconstruction)
+
+            first = replay.verify_by_proposal_version(generated.proposal_version.proposal_version_id)
+            second = replay.verify_by_proposal_version(generated.proposal_version.proposal_version_id)
+
+            assert first.status == "PASS"
+            assert first.differences == tuple()
+            assert first == second
+
+
+def test_replay_verification_failure_reports_differences_postgres() -> None:
+    engine_sql = create_engine(settings.db_url)
+    data = build_input(scenario_catalog()["B_strong_negative"])
+
+    for _ in _with_seed(engine_sql, data):
+        with Session(engine_sql) as session:
+            engine = RecommendationDecisionEngine(
+                proposal_repository=SQLModelRecommendationProposalRepository(session),
+                version_repository=SQLModelRecommendationProposalVersionRepository(session),
+                snapshot_repository=SQLModelRecommendationSnapshotRepository(session),
+                reason_repository=SQLModelRecommendationReasonRepository(session),
+                trace_repository=SQLModelRecommendationTraceRepository(session),
+            )
+            generated = engine.generate_recommendation(data)
+
+            snapshot_json = session.execute(
+                sa.text(
+                    """
+                    SELECT canonical_payload_json
+                    FROM decision_recommendation_input_snapshots
+                    WHERE snapshot_id=:snapshot_id
+                    """
+                ),
+                {"snapshot_id": generated.input_snapshot.snapshot_id},
+            ).scalar_one()
+            payload = json.loads(snapshot_json)
+            payload["thesis_health"]["thesis_health_index"] = 0.95
+            payload["thesis_health"]["evidence_quality"] = 0.95
+            payload["thesis_health"]["contradictory_strength"] = 0.01
+            session.execute(
+                sa.text(
+                    """
+                    UPDATE decision_recommendation_input_snapshots
+                    SET canonical_payload_json=:payload
+                    WHERE snapshot_id=:snapshot_id
+                    """
+                ),
+                {
+                    "snapshot_id": generated.input_snapshot.snapshot_id,
+                    "payload": json.dumps(payload, sort_keys=True, separators=(",", ":")),
+                },
+            )
+            session.commit()
+
+            reconstruction = RecommendationReconstructionService(
+                proposal_repository=SQLModelRecommendationProposalRepository(session),
+                version_repository=SQLModelRecommendationProposalVersionRepository(session),
+                snapshot_repository=SQLModelRecommendationSnapshotRepository(session),
+                trace_repository=SQLModelRecommendationTraceRepository(session),
+                reason_repository=SQLModelRecommendationReasonRepository(session),
+                decision_repository=SQLModelInvestmentDecisionRepository(session),
+            )
+            replay = RecommendationReplayVerificationService(reconstruction)
+            report = replay.verify_by_proposal_version(generated.proposal_version.proposal_version_id)
+
+            assert report.status == "FAIL"
+            assert report.differences
+            assert any(row.field in {"action", "overall_score", "deterministic_input_hash"} for row in report.differences)
+
+
+def test_audit_trace_is_not_deleted_by_parent_delete_postgres() -> None:
+    engine_sql = create_engine(settings.db_url)
+    data = build_input(scenario_catalog()["C_mixed_conflicting"])
+
+    for _ in _with_seed(engine_sql, data):
+        with Session(engine_sql) as session:
+            engine = RecommendationDecisionEngine(
+                proposal_repository=SQLModelRecommendationProposalRepository(session),
+                version_repository=SQLModelRecommendationProposalVersionRepository(session),
+                snapshot_repository=SQLModelRecommendationSnapshotRepository(session),
+                reason_repository=SQLModelRecommendationReasonRepository(session),
+                trace_repository=SQLModelRecommendationTraceRepository(session),
+            )
+            generated = engine.generate_recommendation(data)
+            proposal_id = generated.proposal.proposal_id
+
+            with pytest.raises(IntegrityError):
+                session.execute(
+                    sa.text(
+                        "DELETE FROM decision_recommendation_proposals WHERE proposal_id=:proposal_id"
+                    ),
+                    {"proposal_id": proposal_id},
+                )
+                session.commit()
+            session.rollback()
+
+            trace_count = session.execute(
+                sa.text("SELECT COUNT(*) FROM decision_recommendation_traces WHERE proposal_id=:proposal_id"),
+                {"proposal_id": proposal_id},
+            ).scalar_one()
+            assert trace_count == 1

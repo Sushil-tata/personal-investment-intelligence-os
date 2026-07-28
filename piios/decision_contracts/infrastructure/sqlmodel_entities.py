@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from sqlalchemy import Index, UniqueConstraint
+from sqlalchemy import Column, ForeignKey, Index, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 
@@ -166,12 +166,26 @@ class RecommendationTraceEntity(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     trace_id: str
-    proposal_id: str = Field(foreign_key="decision_recommendation_proposals.proposal_id")
+    proposal_id: str = Field(
+        sa_column=Column(
+            "proposal_id",
+            ForeignKey("decision_recommendation_proposals.proposal_id", ondelete="RESTRICT"),
+            nullable=False,
+        )
+    )
     proposal_version_id: str = Field(
-        foreign_key="decision_recommendation_proposal_versions.proposal_version_id"
+        sa_column=Column(
+            "proposal_version_id",
+            ForeignKey("decision_recommendation_proposal_versions.proposal_version_id", ondelete="RESTRICT"),
+            nullable=False,
+        )
     )
     input_snapshot_id: str = Field(
-        foreign_key="decision_recommendation_input_snapshots.snapshot_id"
+        sa_column=Column(
+            "input_snapshot_id",
+            ForeignKey("decision_recommendation_input_snapshots.snapshot_id", ondelete="RESTRICT"),
+            nullable=False,
+        )
     )
     engine_name: str
     engine_version: str

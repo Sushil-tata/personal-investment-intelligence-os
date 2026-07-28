@@ -213,6 +213,26 @@ def _cleanup_postgres_context(conn: sa.Connection, data) -> None:
     conn.execute(
         sa.text(
             """
+            DELETE FROM decision_recommendation_trace_entries
+            WHERE trace_id IN (
+                SELECT trace_id FROM decision_recommendation_traces WHERE proposal_id = :proposal_id
+            )
+            """
+        ),
+        {"proposal_id": proposal_id},
+    )
+    conn.execute(
+        sa.text(
+            """
+            DELETE FROM decision_recommendation_traces
+            WHERE proposal_id = :proposal_id
+            """
+        ),
+        {"proposal_id": proposal_id},
+    )
+    conn.execute(
+        sa.text(
+            """
             DELETE FROM decision_recommendation_reasons
             WHERE proposal_version_id IN (
                 SELECT proposal_version_id FROM decision_recommendation_proposal_versions WHERE proposal_id = :proposal_id
