@@ -9,68 +9,119 @@ ui.inject_base_styles()
 ui.page_header("Governance Console", "Traceability, review, and data-quality posture across the platform.")
 
 tabs = st.tabs([
-    "Traceability", "Replay", "Diagnostics", "Confidence", "IPS Compliance",
-    "Identity Resolution", "Data Quality", "Evidence Completeness", "Review Queue",
+    "Traceability", "Replay", "Confidence Components", "Decision Lineage", "Governance Review Queue",
+    "IPS Compliance", "Identity Resolution", "Data Quality", "Evidence Completeness",
 ])
 
+# --- Wave 2B live diagnostics (proposal-version scoped) ---------------------
 with tabs[0]:
     ui.section_header("Traceability")
-    ui.disabled_card("Recommendation trace linkage", "Trace-linked evidence, claim references, and canonical "
-                      "input snapshots are part of the Wave 2B decision-intelligence engine, not yet merged "
-                      "into this branch.")
+    pv_id = ui.proposal_version_id_input(key="gov_pv_trace")
+    if not pv_id:
+        ui.empty_state_card("Enter a Proposal Version ID above to view its traceability diagnostic.")
+    else:
+        result = api.get_traceability_diagnostic(pv_id)
+
+        def _trace(data):
+            st.markdown(f"**Overall status:** {ui.diagnostic_status_badge(data.overall_status)}  "
+                        f"**Severity:** {ui.diagnostic_severity_badge(data.severity)}", unsafe_allow_html=True)
+            for check in data.checks:
+                with st.expander(f"{check.code} — {check.status}"):
+                    st.markdown(f"{ui.diagnostic_status_badge(check.status)} {ui.diagnostic_severity_badge(check.severity)}",
+                                unsafe_allow_html=True)
+                    st.write(check.message)
+                    if check.remediation_hint:
+                        st.caption(f"Remediation: {check.remediation_hint}")
+            return data
+
+        _trace_data_holder = {}
+        if result.ok and not result.is_empty:
+            _trace_data_holder["data"] = _trace(result.data)
+        else:
+            ui.render(result, _trace, empty_message="No traceability checks recorded for this proposal version.")
 
 with tabs[1]:
-    ui.section_header("Replay")
-    ui.disabled_card("Replay verification", "PASS/FAIL replay verification against a recomputed recommendation "
-                      "is not available — the replay-verification service is not yet merged into this branch.")
+    ui.section_header("Replay", "Surfaced as a traceability check, not a separate endpoint.")
+    pv_id_replay = ui.proposal_version_id_input(key="gov_pv_replay")
+    if not pv_id_replay:
+        ui.empty_state_card("Enter a Proposal Version ID above to view its replay status.")
+    else:
+        trace_result = api.get_traceability_diagnostic(pv_id_replay)
+        if trace_result.ok and not trace_result.is_empty:
+            replay_check = next((c for c in trace_result.data.checks if "REPLAY" in c.code.upper()), None)
+            if replay_check is not None:
+                st.markdown(f"{ui.diagnostic_status_badge(replay_check.status)} {ui.diagnostic_severity_badge(replay_check.severity)}",
+                            unsafe_allow_html=True)
+                st.write(replay_check.message)
+                if replay_check.remediation_hint:
+                    st.caption(f"Remediation: {replay_check.remediation_hint}")
+            else:
+                ui.unavailable_state_card("Unavailable from current persisted data")
+        elif not trace_result.ok:
+            ui.error_state_card(f"Could not load traceability diagnostic. {trace_result.error}")
+        else:
+            ui.unavailable_state_card("Unavailable from current persisted data")
 
 with tabs[2]:
-    ui.section_header("Diagnostics")
-    ui.disabled_card("General diagnostics feed", "A consolidated diagnostics feed (low-confidence flags, "
-                      "stale-evidence flags, missing-data flags) does not exist as a single endpoint yet.")
-    shadow = api.get_shadow_diagnostics()
+    ui.section_header("Confidence Components", "Rendered exactly as returned — never recomputed by the frontend.")
+    pv_id_conf = ui.proposal_version_id_input(key="gov_pv_conf")
+    if not pv_id_conf:
+        ui.empty_state_card("Enter a Proposal Version ID above to view its confidence components.")
+    else:
+        conf_result = api.get_confidence_diagnostic(pv_id_conf)
 
-    def _shadow(data):
-        if not data.enabled:
-            ui.empty_state_card("Shadow identity diagnostics are only enabled in dev/test environments.")
-            return
-        ui.kpi_row([
-            ui.KPIItem("Checked Records", str(data.checked_records)),
-            ui.KPIItem("Unresolved Records", str(data.unresolved_records)),
-        ])
-        for item in data.items[:20]:
-            ui.governance_issue_card(
-                f"{item.source_type} `{item.source_id}`", "MEDIUM" if item.warnings else "LOW",
-                item.resolution_status, f"Legacy subject: {item.legacy_subject} · candidates: {item.candidate_count}",
-            )
+        def _conf(data):
+            if data.authoritative_confidence is not None:
+                st.markdown(f"**Authoritative confidence:** {data.authoritative_confidence:.2f}")
+            else:
+                ui.unavailable_state_card("Unavailable from current persisted data")
+            for comp in data.components:
+                ui.confidence_component_card(comp.name, comp.value, comp.status, comp.source, comp.explanation)
+            if data.limitations:
+                st.caption("Limitations: " + "; ".join(data.limitations))
 
-    ui.render(shadow, _shadow)
+        ui.render(conf_result, _conf)
 
 with tabs[3]:
-    ui.section_header("Confidence", "Distribution of confidence scores across current recommendation proposals.")
-    recos = api.get_recommendations()
+    ui.section_header("Decision Lineage")
+    decision_id = ui.decision_id_input(key="gov_decision_lineage")
+    if not decision_id:
+        ui.empty_state_card("Enter a Decision ID above to view its lineage diagnostic.")
+    else:
+        lineage_result = api.get_decision_lineage_diagnostic(decision_id)
 
-    def _confidence(data):
-        if not data:
-            ui.empty_state_card("No recommendations to summarise.")
-            return
-        bands = {"High": 0, "Medium": 0, "Low": 0}
-        for r in data:
-            label, _ = ui.confidence_tone(r.confidence_score)
-            bands[label] += 1
-        avg = sum(r.confidence_score for r in data) / len(data)
-        ui.kpi_row([
-            ui.KPIItem("Average Confidence", f"{avg:.0f}/100"),
-            ui.KPIItem("High Confidence", str(bands["High"])),
-            ui.KPIItem("Medium Confidence", str(bands["Medium"])),
-            ui.KPIItem("Low Confidence", str(bands["Low"])),
-        ])
-        st.caption("Bands are a frontend presentation grouping of the backend's own confidence_score field — "
-                   "no new score is computed.")
+        def _lineage(data):
+            st.markdown(f"**Decision meaning:** {data.decision_meaning} · **State:** {data.decision_state}")
+            st.markdown(f"**Overall status:** {ui.diagnostic_status_badge(data.overall_status)}  "
+                        f"**Severity:** {ui.diagnostic_severity_badge(data.severity)}", unsafe_allow_html=True)
+            for check in data.checks:
+                with st.expander(f"{check.code} — {check.status}"):
+                    st.markdown(f"{ui.diagnostic_status_badge(check.status)} {ui.diagnostic_severity_badge(check.severity)}",
+                                unsafe_allow_html=True)
+                    st.write(check.message)
 
-    ui.render(recos, _confidence)
+        ui.render(lineage_result, _lineage, empty_message="No lineage checks recorded for this decision.")
 
 with tabs[4]:
+    ui.section_header("Governance Review Queue")
+    pv_id_backlog = ui.proposal_version_id_input(key="gov_pv_backlog")
+    if not pv_id_backlog:
+        ui.empty_state_card("Enter a Proposal Version ID above to view its governance review queue.")
+    else:
+        backlog_result = api.get_governance_backlog(pv_id_backlog)
+
+        def _backlog(data):
+            if not data.items:
+                st.success("No governance review items flagged for this proposal version.")
+                return
+            for item in data.items:
+                ui.governance_review_card(item.review_item_id, item.reason_code, item.severity, item.status,
+                                           item.summary, item.source_diagnostic, item.created_at)
+
+        ui.render(backlog_result, _backlog, empty_message="No governance review items flagged for this proposal version.")
+
+# --- Legacy, still-live governance-adjacent data ----------------------------
+with tabs[5]:
     ui.section_header("IPS Compliance")
     ips = api.get_ips_constraints()
 
@@ -86,7 +137,7 @@ with tabs[4]:
 
     ui.render(ips, _ips)
 
-with tabs[5]:
+with tabs[6]:
     ui.section_header("Identity Resolution")
     limit = st.slider("Max issues to fetch", 10, 500, 100, key="issues_limit")
     issues = api.get_resolution_issues(limit=limit)
@@ -105,7 +156,7 @@ with tabs[5]:
 
     ui.render(issues, _issues, empty_message="No unresolved identity resolution issues.")
 
-with tabs[6]:
+with tabs[7]:
     ui.section_header("Data Quality", "Source trust tiers and freshness SLAs from the data-trust hierarchy.")
     trust = api.get_data_trust_hierarchy()
 
@@ -118,22 +169,14 @@ with tabs[6]:
 
     ui.render(trust, _trust)
 
-with tabs[7]:
-    ui.section_header("Evidence Completeness")
-    ui.disabled_card("Evidence completeness scoring", "A per-recommendation or per-thesis evidence-completeness "
-                      "metric (e.g. required evidence types present vs. missing) is not exposed by the backend.")
-
 with tabs[8]:
-    ui.section_header("Governance Review Queue")
-    ui.disabled_card("Unified governance review queue", "A single queue combining overdue reviews, policy "
-                      "violations, and traceability gaps across portfolios/instruments does not exist yet. "
-                      "Use the IPS Compliance and Identity Resolution tabs above for the review-relevant data "
-                      "that is genuinely available today.")
+    ui.section_header("Evidence Completeness")
+    ui.unavailable_state_card("Unavailable from current persisted data")
+    st.caption("A per-proposal-version evidence-completeness metric is not exposed by the decision-contracts API.")
 
 st.divider()
 ui.api_gap_notice(
-    "Traceability, replay verification, a consolidated diagnostics feed, evidence-completeness scoring, and a "
-    "unified governance review queue all depend on the Wave 2B decision-intelligence/traceability engine, "
-    "which is not merged into this branch. See dashboard/API_CONTRACT_REQUESTS.md for the endpoints and DTOs "
-    "needed to close each gap."
+    "Traceability, Replay, Confidence Components, and Governance Review Queue require an already-known Proposal "
+    "Version ID; Decision Lineage requires an already-known Decision ID — there is no list/discovery endpoint "
+    "for any of these. See dashboard/FRONTEND_INTEGRATION_NOTES.md."
 )

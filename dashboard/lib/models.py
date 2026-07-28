@@ -316,3 +316,144 @@ class ShadowIdentityDiagnosticsResponse:
 class HealthResponse:
     status: str
     product: str
+
+
+# --- Wave 2B decision-contracts models -------------------------------------
+# Mirrors backend/piios_backend/schemas/decision_contracts.py exactly, per
+# piios/docs/WAVE2B_M5_FRONTEND_CONTRACT.md. Field names/types here must
+# never drift from that contract without a corresponding backend change.
+
+DIAGNOSTIC_STATUSES = ("PASS", "FAIL", "WARNING", "UNAVAILABLE", "NOT_APPLICABLE")
+DIAGNOSTIC_SEVERITIES = ("INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL")
+DECISION_TYPES = ("ACCEPT", "REJECT", "MODIFIED", "OVERRIDDEN", "DEFERRED", "REQUEST_RESEARCH")
+
+
+@dataclass
+class RecommendationProposalDetail:
+    proposal_id: str
+    target_type: str
+    target_key: str
+    scope: str
+    status: str
+    created_at: str
+    updated_at: str
+    advisory_only: bool = True
+
+
+@dataclass
+class RecommendationProposalVersionDetail:
+    proposal_version_id: str
+    proposal_id: str
+    version_number: int
+    status: str
+    created_at: str
+    snapshot_id: str
+    action: str
+    authoritative_confidence: float
+    priority_level: str
+    priority_score: float
+    required_human_review: bool
+    action_note: str | None = None
+    action_min_weight: float | None = None
+    action_max_weight: float | None = None
+    supersedes_version_id: str | None = None
+    advisory_only: bool = True
+
+
+@dataclass
+class DecisionDetail:
+    decision_id: str
+    proposal_version_id: str
+    state: str
+    decision_meaning: str
+    reason_code: str
+    decided_at: str
+    reason_text: str | None = None
+    decided_by: str | None = None
+    preferred_alternative_target_key: str | None = None
+    modified_action: str | None = None
+    modified_action_note: str | None = None
+    modified_action_min_weight: float | None = None
+    modified_action_max_weight: float | None = None
+    modified_position_min_weight: float | None = None
+    modified_position_max_weight: float | None = None
+    advisory_only: bool = True
+
+
+@dataclass
+class DiagnosticCheck:
+    code: str
+    status: str
+    severity: str
+    message: str
+    related_entity_type: str
+    related_entity_id: str | None
+    remediation_hint: str | None
+
+
+@dataclass
+class TraceabilityDiagnostic:
+    proposal_version_id: str
+    overall_status: str
+    checks: list[DiagnosticCheck]
+    diagnostic_codes: list[str]
+    severity: str
+    generated_at: str
+    proposal_id: str | None = None
+    advisory_only: bool = True
+
+
+@dataclass
+class ConfidenceComponent:
+    name: str
+    value: float | None
+    status: str
+    source: str
+    explanation: str
+
+
+@dataclass
+class ConfidenceDiagnostic:
+    proposal_version_id: str
+    authoritative_confidence: float | None
+    components: list[ConfidenceComponent]
+    limitations: list[str]
+    generated_at: str
+    advisory_only: bool = True
+
+
+@dataclass
+class DecisionLineageDiagnostic:
+    decision_id: str
+    proposal_version_id: str
+    decision_state: str
+    decision_meaning: str
+    overall_status: str
+    checks: list[DiagnosticCheck]
+    diagnostic_codes: list[str]
+    severity: str
+    generated_at: str
+    proposal_id: str | None = None
+    advisory_only: bool = True
+
+
+@dataclass
+class GovernanceReviewItem:
+    review_item_id: str
+    proposal_version_id: str
+    reason_code: str
+    severity: str
+    status: str
+    created_at: str
+    source_diagnostic: str
+    summary: str
+    proposal_id: str | None = None
+    decision_id: str | None = None
+
+
+@dataclass
+class GovernanceReviewBacklog:
+    proposal_version_id: str
+    items: list[GovernanceReviewItem]
+    generated_at: str
+    advisory_only: bool = True

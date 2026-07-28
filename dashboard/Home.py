@@ -39,7 +39,9 @@ with r1[2]:
     st.metric("Today's Change", "—", help="No daily/historical P&L endpoint exists in the backend yet.")
 
 with r1[3]:
-    st.metric("Recommendations", len(reco_queue.data) if reco_queue.ok and reco_queue.data else 0)
+    st.metric("Recommendations (legacy queue)", len(reco_queue.data) if reco_queue.ok and reco_queue.data else 0,
+              help="From the legacy ticker-based recommendation queue. The new Wave 2B proposal system has no "
+                   "list/discovery endpoint yet, so it cannot be aggregated here — see the section below.")
 
 with r1[4]:
     gov_count = (len(issues.data) if issues.ok and issues.data else 0)
@@ -117,7 +119,8 @@ with r3[0]:
             return
         for r in data[:5]:
             ui.recommendation_card(r.ticker, r.status, r.confidence_score, r.portfolio_fit_score, r.why_now)
-        st.caption("Full detail in Recommendation Review. All items are proposals, not decisions or executions.")
+        st.caption("Full detail in Top Recommendations. All items are proposals, not decisions or executions. "
+                   "(Recommendation Review now shows the newer Wave 2B proposal-version system — see below.)")
 
     ui.render(reco_queue, _queue)
 
@@ -150,6 +153,48 @@ with r3[2]:
         st.caption("Full governance detail in the Governance Console.")
 
     ui.render(issues, _gov_queue)
+
+ui.section_header("Wave 2B Decision Intelligence", "Live data for the proposal version last looked up this session — there is no list/discovery endpoint yet.")
+
+_shared_pv_id = st.session_state.get("piios_shared_proposal_version_id", "")
+if not _shared_pv_id:
+    ui.empty_state_card(
+        "No proposal version has been looked up yet this session. There is no list/discovery endpoint for "
+        "Wave 2B proposals — visit Recommendation Review to look one up by ID."
+    )
+else:
+    _pv_result = api.get_proposal_version(_shared_pv_id)
+    if not _pv_result.ok:
+        ui.error_state_card(f"Could not load proposal version '{_shared_pv_id}'. {_pv_result.error}")
+    else:
+        _pv = _pv_result.data
+        _latest_result = api.get_latest_decision_for_proposal_version(_shared_pv_id)
+        _trace_result = api.get_traceability_diagnostic(_shared_pv_id)
+        _backlog_result = api.get_governance_backlog(_shared_pv_id)
+
+        w1, w2, w3, w4, w5 = st.columns(5)
+        with w1:
+            st.metric("Proposal Version", ui.proposal_version_label(_pv.proposal_version_id, _pv.version_number))
+        with w2:
+            latest_label = "—"
+            if _latest_result.ok and _latest_result.data is not None:
+                d = _latest_result.data
+                latest_label = "Request Further Research" if d.decision_meaning == "REQUEST_RESEARCH" else d.decision_meaning
+            elif _latest_result.ok:
+                latest_label = "No decision yet"
+            st.metric("Latest Decision", latest_label)
+        with w3:
+            trace_status = _trace_result.data.overall_status if _trace_result.ok and not _trace_result.is_empty else "—"
+            st.metric("Traceability", trace_status)
+        with w4:
+            backlog_count = len(_backlog_result.data.items) if _backlog_result.ok and not _backlog_result.is_empty else 0
+            high_sev = 0
+            if _backlog_result.ok and not _backlog_result.is_empty:
+                high_sev = len([i for i in _backlog_result.data.items if i.severity in ("HIGH", "CRITICAL")])
+            st.metric("Governance Items", backlog_count, help=f"{high_sev} high/critical severity")
+        with w5:
+            st.metric("Advisory Status", "Advisory Only" if _pv.advisory_only else "—")
+        st.caption("Open Recommendation Review, Decisions, or Governance Console for full detail on this proposal version.")
 
 st.divider()
 ui.advisory_banner()

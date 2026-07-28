@@ -40,6 +40,9 @@ __all__ = [
     "TimelineEvent", "timeline", "audit_timeline", "decision_timeline",
     "confidence_breakdown_card", "evidence_card", "recommendation_card",
     "portfolio_allocation_card", "governance_issue_card", "pipeline_flow", "allocation_donut",
+    "diagnostic_status_badge", "diagnostic_severity_badge", "confidence_component_card",
+    "governance_review_card", "proposal_version_label", "unavailable_state_card", "retry_button",
+    "proposal_version_id_input", "decision_id_input",
 ]
 
 _STYLE_INJECTED_KEY = "_piios_base_styles_injected"
@@ -378,3 +381,119 @@ def allocation_donut(labels: list[str], values: list[float], title: str | None =
     fig.patch.set_alpha(0)
     st.pyplot(fig, use_container_width=True)
     plt.close(fig)
+
+
+# --- Wave 2B diagnostic / decision components -------------------------------
+# Colours here are intentionally distinct from confidence_tone()/risk_badge()
+# above: diagnostic status (PASS/FAIL/WARNING/UNAVAILABLE/NOT_APPLICABLE) and
+# diagnostic severity (INFO/LOW/MEDIUM/HIGH/CRITICAL) are the backend's own
+# vocabulary and must never be collapsed into the older, unrelated
+# confidence/risk bands. UNAVAILABLE is deliberately neutral grey, never red —
+# "we don't know" is not the same signal as "it failed."
+
+_DIAGNOSTIC_STATUS_COLORS = {
+    "PASS": "#1E7145",
+    "FAIL": "#B3261E",
+    "WARNING": "#B4690E",
+    "UNAVAILABLE": "#5B6472",
+    "NOT_APPLICABLE": "#8A93A0",
+}
+
+_DIAGNOSTIC_SEVERITY_COLORS = {
+    "INFO": "#1F4E79",
+    "LOW": "#1E7145",
+    "MEDIUM": "#B4690E",
+    "HIGH": "#B3261E",
+    "CRITICAL": "#7A1712",
+}
+
+
+def diagnostic_status_badge(status: str) -> str:
+    s = (status or "").upper()
+    color = _DIAGNOSTIC_STATUS_COLORS.get(s, "#5B6472")
+    label = "N/A" if s == "NOT_APPLICABLE" else s
+    return f'<span class="piios-badge" style="background:{color}22;color:{color};">{html.escape(label or "UNKNOWN")}</span>'
+
+
+def diagnostic_severity_badge(severity: str) -> str:
+    s = (severity or "").upper()
+    color = _DIAGNOSTIC_SEVERITY_COLORS.get(s, "#5B6472")
+    return f'<span class="piios-badge" style="background:{color}22;color:{color};">{html.escape(severity or "UNKNOWN")}</span>'
+
+
+def unavailable_state_card(message: str = "Unavailable from current persisted data") -> None:
+    st.markdown(f'<div class="piios-card disabled">🔒 {html.escape(message)}</div>', unsafe_allow_html=True)
+
+
+def confidence_component_card(name: str, value: float | None, status: str, source: str, explanation: str) -> None:
+    value_html = f"{value:.2f}" if value is not None else "Unavailable from current persisted data"
+    st.markdown(
+        f'<div class="piios-card"><div class="piios-card-title">{html.escape(name)} '
+        f'{diagnostic_status_badge(status)}</div>'
+        f'<div>Value: {html.escape(str(value_html))} · Source: {html.escape(source)}</div>'
+        f'<div style="margin-top:0.3rem;color:#5B6472;">{html.escape(explanation)}</div></div>',
+        unsafe_allow_html=True,
+    )
+
+
+def governance_review_card(review_item_id: str, reason_code: str, severity: str, status: str, summary: str,
+                            source_diagnostic: str, created_at: str) -> None:
+    st.markdown(
+        f'<div class="piios-card"><div class="piios-card-title">{html.escape(reason_code)} '
+        f'{diagnostic_severity_badge(severity)}</div>'
+        f'<div>Status: {html.escape(status)} · Source: {html.escape(source_diagnostic)} · '
+        f'Item: <code>{html.escape(review_item_id)}</code></div>'
+        f'<div style="margin-top:0.3rem;">{html.escape(summary)}</div>'
+        f'<div style="color:#8A93A0;font-size:0.76rem;margin-top:0.2rem;">{html.escape(created_at)}</div></div>',
+        unsafe_allow_html=True,
+    )
+
+
+def proposal_version_label(proposal_version_id: str, version_number: int | None = None) -> str:
+    if version_number is not None:
+        return f"v{version_number} · {proposal_version_id}"
+    return proposal_version_id
+
+
+def retry_button(label: str = "🔄 Retry", key: str | None = None) -> bool:
+    return st.button(label, key=key)
+
+
+_SHARED_PV_KEY = "piios_shared_proposal_version_id"
+_SHARED_DECISION_KEY = "piios_shared_decision_id"
+
+
+def proposal_version_id_input(label: str = "Proposal Version ID", help: str | None = None,
+                               key: str | None = None) -> str:
+    """Shared across Recommendation Review / Decisions / Governance so a
+    lookup made on one page (or one tab) carries over as the default for the
+    next, in the same session. There is currently no list/discovery endpoint
+    for proposals or proposal versions anywhere in the backend — this text
+    input is the only way to reach a specific proposal version (see
+    FRONTEND_INTEGRATION_NOTES.md).
+
+    Pass a distinct `key` any time more than one of these appears in the same
+    script run (e.g. multiple tabs on one page) — Streamlit requires unique
+    widget keys, and reusing the default auto-derived key across identical
+    labels raises a DuplicateWidgetID error."""
+    default = st.session_state.get(_SHARED_PV_KEY, "")
+    value = st.text_input(
+        label, value=default,
+        help=help or "No discovery/listing endpoint exists yet — paste a known proposal_version_id.",
+        key=key or "piios_pv_id_input_default",
+    )
+    st.session_state[_SHARED_PV_KEY] = value
+    return value.strip()
+
+
+def decision_id_input(label: str = "Decision ID", help: str | None = None, key: str | None = None) -> str:
+    """See proposal_version_id_input() — pass a distinct `key` per call site
+    within the same script run."""
+    default = st.session_state.get(_SHARED_DECISION_KEY, "")
+    value = st.text_input(
+        label, value=default,
+        help=help or "No discovery/listing endpoint exists yet — paste a known decision_id.",
+        key=key or "piios_decision_id_input_default",
+    )
+    st.session_state[_SHARED_DECISION_KEY] = value
+    return value.strip()

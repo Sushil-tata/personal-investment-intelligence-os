@@ -5,127 +5,161 @@ from lib import components as ui
 
 st.set_page_config(page_title="PIIOS — Recommendation Review", layout="wide")
 ui.inject_base_styles()
-ui.page_header("Recommendation Review", "Investment memo view of a single Recommendation Proposal.")
+ui.page_header("Recommendation Review", "Investment memo view of a real Wave 2B Recommendation Proposal Version.")
 
 st.info(
     "Every item on this page is a **Recommendation Proposal** — a model-generated, advisory suggestion. "
-    "It becomes a **Human Decision** only after a reviewer acts on it (see the Decisions page), and PIIOS "
-    "never executes trades — there is no broker connectivity anywhere in this system.",
+    "It becomes a **Human Decision** only after a reviewer acts on it (see the Decisions page). "
+    "**Future Execution** is not available — PIIOS has no broker connectivity anywhere in this system.",
     icon="ℹ️",
 )
+ui.pipeline_flow([("Recommendation Proposal", False), ("Human Decision", False), ("Future Execution", True)])
 
-recos = api.get_recommendations()
+pv_id = ui.proposal_version_id_input()
+
+if not pv_id:
+    ui.empty_state_card("Enter a Proposal Version ID above to open its investment memo.")
+    st.stop()
+
+pv_result = api.get_proposal_version(pv_id)
+
+if not pv_result.ok:
+    ui.error_state_card(f"Could not load proposal version '{pv_id}'. {pv_result.error}")
+    ui.retry_button(key="retry_pv")
+    st.stop()
+
+pv = pv_result.data
+proposal_result = api.get_proposal(pv.proposal_id)
+
+ui.section_header("Executive Summary")
+ui.kpi_row([
+    ui.KPIItem("Status", pv.status),
+    ui.KPIItem("Proposed Action", pv.action),
+    ui.KPIItem("Priority", f"{pv.priority_level} ({pv.priority_score:.2f})"),
+    ui.KPIItem("Confidence", f"{pv.authoritative_confidence:.2f}"),
+    ui.KPIItem("Human Review Required", "Yes" if pv.required_human_review else "No"),
+])
+if proposal_result.ok:
+    st.caption(f"Target: {proposal_result.data.target_type} `{proposal_result.data.target_key}` · "
+               f"scope: {proposal_result.data.scope} · proposal status: {proposal_result.data.status}")
+else:
+    ui.unavailable_state_card(f"Proposal-level detail unavailable: {proposal_result.error}")
+
+ui.section_header("Recommendation", "The advisory recommendation itself — never a trade, order, or execution instruction.")
+c1, c2 = st.columns(2)
+with c1:
+    ui.metric_tile("Advisory Recommendation", pv.action)
+    ui.metric_tile("Action Note", pv.action_note or "Unavailable from current persisted data")
+with c2:
+    weight_range = (f"{pv.action_min_weight:.2f} – {pv.action_max_weight:.2f}"
+                     if pv.action_min_weight is not None and pv.action_max_weight is not None
+                     else "Unavailable from current persisted data")
+    ui.metric_tile("Proposed Weight Range (advisory)", weight_range)
+
+ui.section_header("Proposal Version")
+pc1, pc2 = st.columns(2)
+with pc1:
+    ui.metric_tile("Proposal Version", ui.proposal_version_label(pv.proposal_version_id, pv.version_number))
+    ui.metric_tile("Snapshot", pv.snapshot_id)
+with pc2:
+    ui.metric_tile("Created", pv.created_at)
+    ui.metric_tile("Supersedes Version", pv.supersedes_version_id or "This is the first version")
+
+ui.section_header("Investment Thesis")
+ui.unavailable_state_card("Unavailable from current persisted data")
+st.caption("The proposal-version detail links to a snapshot_id but the decision-contracts API does not expose "
+           "a read endpoint for the underlying thesis narrative.")
+
+ui.section_header("Supporting Claims")
+ui.unavailable_state_card("Unavailable from current persisted data")
+
+ui.section_header("Supporting Evidence")
+ui.unavailable_state_card("Unavailable from current persisted data")
+
+ui.section_header("Confidence", "Rendered exactly as returned — the frontend never recomputes confidence.")
+confidence_result = api.get_confidence_diagnostic(pv_id)
 
 
-def _render(data):
-    tickers = sorted({r.ticker for r in data})
-    statuses = sorted({r.status for r in data})
-    cols = st.columns(2)
-    ticker_filter = cols[0].multiselect("Ticker", tickers)
-    status_filter = cols[1].multiselect("Status", statuses)
-    filtered = [r for r in data if (not ticker_filter or r.ticker in ticker_filter)
-                and (not status_filter or r.status in status_filter)]
-    st.caption(f"Showing {len(filtered)} of {len(data)} recommendation proposals.")
-
-    if not filtered:
-        ui.empty_state_card("No recommendation proposals match the current filters.")
-        return
-
-    options = {f"{r.ticker} — {r.status} (id {r.recommendation_id})": r for r in filtered}
-    choice = st.selectbox("Open a proposal", list(options.keys()))
-    r = options[choice]
-
-    ui.section_header("Executive Summary")
-    ui.kpi_row([
-        ui.KPIItem("Status", r.status),
-        ui.KPIItem("Confidence", f"{r.confidence_score:.0f}/100"),
-        ui.KPIItem("Portfolio Fit", f"{r.portfolio_fit_score:.0f}/100"),
-        ui.KPIItem("Time Horizon", r.time_horizon),
-    ])
-    ui.recommendation_card(r.ticker, r.status, r.confidence_score, r.portfolio_fit_score, r.why_now)
-
-    ui.section_header("Recommendation", "Advisory position-size suggestion and bucket placement.")
-    c1, c2 = st.columns(2)
-    with c1:
-        ui.metric_tile("Portfolio Bucket", r.portfolio_bucket)
-    with c2:
-        ui.metric_tile("Position Size Suggestion (advisory)", r.position_size_suggestion)
-    st.caption("No discrete buy/sell/hold action field exists on this model — the recommendation is expressed "
-               "as narrative bull/bear case and an advisory sizing suggestion, not a coded action.")
-
-    ui.section_header("Investment Thesis")
-    tc1, tc2 = st.columns(2)
-    with tc1:
-        st.markdown("**Bull case**")
-        st.write(r.bull_case)
-        st.markdown("**Why now**")
-        st.write(r.why_now)
-    with tc2:
-        st.markdown("**Bear case**")
-        st.write(r.bear_case)
-        st.markdown("**Why not now**")
-        st.write(r.why_not_now)
-    st.markdown("**Rationale**")
-    st.write(r.rationale)
-
-    ui.section_header("Supporting Claims")
-    ui.disabled_card("Structured supporting claims", "The backend does not yet persist discrete, individually "
-                      "scored claims for a recommendation — only the narrative bull/bear case above.")
-
-    ui.section_header("Supporting Evidence")
-    if r.source_documents or r.source_links:
-        for doc in r.source_documents:
-            ui.evidence_card(doc, r.data_source, r.data_freshness_timestamp, None, None)
-        for link in r.source_links:
-            ui.evidence_card(link, r.data_source, r.data_freshness_timestamp, None, link)
-        st.caption("Per-item credibility scoring is only available on the separate Research Feed page, not at "
-                   "the recommendation-evidence level.")
+def _confidence(data):
+    if data.authoritative_confidence is not None:
+        st.markdown(f"**Authoritative confidence:** {data.authoritative_confidence:.2f}")
     else:
-        ui.empty_state_card("No source documents or links attached to this proposal.")
-
-    ui.section_header("Valuation Summary")
-    ui.disabled_card("Valuation summary", "No valuation fields (fair value, target price, multiple analysis) "
-                      "are exposed by the backend for recommendations today.")
-
-    ui.section_header("Risk Summary")
-    ui.metric_tile("Thesis Invalidation Trigger", r.thesis_invalidation_trigger)
-    ui.disabled_card("Quantified risk impact", "Marginal/component risk contribution, VaR impact, and beta "
-                      "impact of taking this position are not exposed by the backend. See the Risk Console "
-                      "for the portfolio-level limits that do exist.")
-
-    ui.section_header("Portfolio Impact")
-    ui.disabled_card("Quantified portfolio impact", "A dollar or percentage portfolio-impact figure for "
-                      "accepting this proposal is not exposed by the backend. Portfolio Fit Score (shown "
-                      "above, 0-100) is the closest available signal today.")
-
-    ui.section_header("Confidence")
-    ui.confidence_breakdown_card(r.confidence_score)
-
-    ui.section_header("Human Decision")
-    ui.pipeline_flow([("Recommendation Proposal", False), ("Human Decision", False), ("Future Execution", True)])
-    st.markdown(f"Current status: {ui.status_badge(r.status)}", unsafe_allow_html=True)
-    st.write(f"Approved by: {r.approved_by or '—'}")
-    st.caption("Use the Decisions page to record or change a human decision on this proposal.")
-
-    ui.section_header("Audit Information")
-    ac1, ac2 = st.columns(2)
-    with ac1:
-        ui.metric_tile("Recommendation ID", r.recommendation_id)
-        ui.metric_tile("Model Version", r.model_version)
-    with ac2:
-        ui.metric_tile("Created", r.created_at, sublabel=f"Updated {r.updated_at}")
-        ui.metric_tile("Data Freshness", r.data_freshness_timestamp, sublabel=f"Source: {r.data_source}")
-    ui.disabled_card("Traceability & replay verification", "Trace-linked evidence, canonical input snapshots, "
-                      "and replay-verification (PASS/FAIL) status are part of the Wave 2B decision-intelligence "
-                      "engine, which is not yet merged into this branch.")
+        ui.unavailable_state_card("Unavailable from current persisted data")
+    for comp in data.components:
+        ui.confidence_component_card(comp.name, comp.value, comp.status, comp.source, comp.explanation)
+    if data.limitations:
+        st.caption("Limitations: " + "; ".join(data.limitations))
 
 
-ui.render(recos, _render, empty_message="No recommendation proposals currently available.")
+ui.render(confidence_result, _confidence)
+
+ui.section_header("Traceability")
+traceability_result = api.get_traceability_diagnostic(pv_id)
+
+
+def _traceability(data):
+    st.markdown(f"**Overall status:** {ui.diagnostic_status_badge(data.overall_status)}  "
+                f"**Severity:** {ui.diagnostic_severity_badge(data.severity)}", unsafe_allow_html=True)
+    for check in data.checks:
+        with st.expander(f"{check.code} — {check.status}"):
+            st.markdown(f"{ui.diagnostic_status_badge(check.status)} {ui.diagnostic_severity_badge(check.severity)}",
+                        unsafe_allow_html=True)
+            st.write(check.message)
+            if check.related_entity_id:
+                st.caption(f"Related: {check.related_entity_type} `{check.related_entity_id}`")
+            if check.remediation_hint:
+                st.caption(f"Remediation: {check.remediation_hint}")
+    return data
+
+
+_traceability_data = None
+if traceability_result.ok and not traceability_result.is_empty:
+    _traceability_data = _traceability(traceability_result.data)
+else:
+    ui.render(traceability_result, _traceability, empty_message="No traceability checks recorded.")
+
+ui.section_header("Replay", "Replay verification is surfaced as a traceability check, not a separate endpoint.")
+_replay_check = None
+if _traceability_data is not None:
+    _replay_check = next((c for c in _traceability_data.checks if "REPLAY" in c.code.upper()), None)
+if _replay_check is not None:
+    st.markdown(f"{ui.diagnostic_status_badge(_replay_check.status)} {ui.diagnostic_severity_badge(_replay_check.severity)}",
+                unsafe_allow_html=True)
+    st.write(_replay_check.message)
+else:
+    ui.unavailable_state_card("Unavailable from current persisted data")
+
+ui.section_header("Human Decision")
+latest_result = api.get_latest_decision_for_proposal_version(pv_id)
+
+
+def _latest(data):
+    if data is None:
+        ui.empty_state_card("No human decision has been recorded for this proposal version yet.")
+        return
+    label = "Request Further Research" if data.decision_meaning == "REQUEST_RESEARCH" else data.decision_meaning
+    st.markdown(f"**Latest decision:** {label}")
+    st.write(f"Reviewer: {data.decided_by or '—'} · Decided at: {data.decided_at}")
+    st.write(f"Reason: {data.reason_code}" + (f" — {data.reason_text}" if data.reason_text else ""))
+
+
+ui.render(latest_result, _latest, empty_message="No human decision has been recorded for this proposal version yet.")
+st.caption("Full decision history and the decision-capture form are on the Decisions page.")
+
+ui.section_header("Governance Flags")
+backlog_result = api.get_governance_backlog(pv_id)
+
+
+def _backlog(data):
+    if not data.items:
+        st.success("No governance review items flagged for this proposal version.")
+        return
+    for item in data.items:
+        ui.governance_review_card(item.review_item_id, item.reason_code, item.severity, item.status,
+                                   item.summary, item.source_diagnostic, item.created_at)
+
+
+ui.render(backlog_result, _backlog, empty_message="No governance review items flagged for this proposal version.")
 
 st.divider()
-ui.api_gap_notice(
-    "Structured supporting claims/evidence, a valuation summary object, quantified portfolio-impact and "
-    "risk-impact figures, an explicit uncertainties list, traceability status, replay-verification status, "
-    "and a proposal version number are not yet available on this branch. See dashboard/API_CONTRACT_REQUESTS.md "
-    "for the concrete endpoint/DTO specification needed to close these gaps."
-)
+ui.advisory_banner()
