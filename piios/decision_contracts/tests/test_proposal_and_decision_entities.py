@@ -143,6 +143,61 @@ def test_investment_decision_requires_modification_payload_for_modified_state() 
         )
 
 
+def test_investment_decision_rejects_modification_payload_for_non_modified_states() -> None:
+    with pytest.raises(ValueError):
+        InvestmentDecision(
+            decision_id="d1",
+            proposal_version_id="pv1",
+            state=DecisionState.ACCEPTED,
+            reason_code="ALIGNED",
+            decided_at=datetime.now(timezone.utc),
+            modified_action=ActionProposal(action=RecommendationAction.HOLD),
+        )
+
+    with pytest.raises(ValueError):
+        InvestmentDecision(
+            decision_id="d2",
+            proposal_version_id="pv1",
+            state=DecisionState.REJECTED,
+            reason_code="RISK",
+            decided_at=datetime.now(timezone.utc),
+            modified_position_size=PositionSizeRange(0.01, 0.02),
+        )
+
+
+def test_investment_decision_overridden_requires_alternative_target_key() -> None:
+    with pytest.raises(ValueError):
+        InvestmentDecision(
+            decision_id="d1",
+            proposal_version_id="pv1",
+            state=DecisionState.OVERRIDDEN,
+            reason_code="ALTERNATIVE_BETTER",
+            decided_at=datetime.now(timezone.utc),
+        )
+
+    decision = InvestmentDecision(
+        decision_id="d2",
+        proposal_version_id="pv1",
+        state=DecisionState.OVERRIDDEN,
+        reason_code="ALTERNATIVE_BETTER",
+        decided_at=datetime.now(timezone.utc),
+        preferred_alternative_target_key="AMD",
+    )
+    assert decision.preferred_alternative_target_key == "AMD"
+
+
+def test_investment_decision_non_overridden_rejects_alternative_target_key() -> None:
+    with pytest.raises(ValueError):
+        InvestmentDecision(
+            decision_id="d1",
+            proposal_version_id="pv1",
+            state=DecisionState.ACCEPTED,
+            reason_code="ALIGNED",
+            decided_at=datetime.now(timezone.utc),
+            preferred_alternative_target_key="AMD",
+        )
+
+
 def test_investment_decision_is_separate_from_proposal_version() -> None:
     version = _version()
     decision = InvestmentDecision(

@@ -30,3 +30,14 @@ class InvestmentDecision:
 
         if self.state == DecisionState.MODIFIED and self.modified_action is None and self.modified_position_size is None:
             raise ValueError("MODIFIED decisions must provide modified_action or modified_position_size")
+
+        if self.state != DecisionState.MODIFIED and (
+            self.modified_action is not None or self.modified_position_size is not None
+        ):
+            raise ValueError("only MODIFIED decisions may provide modified_action or modified_position_size")
+
+        if self.state == DecisionState.OVERRIDDEN and not (self.preferred_alternative_target_key or "").strip():
+            raise ValueError("OVERRIDDEN decisions must provide preferred_alternative_target_key")
+
+        if self.state != DecisionState.OVERRIDDEN and self.preferred_alternative_target_key is not None:
+            raise ValueError("preferred_alternative_target_key is only allowed for OVERRIDDEN decisions")
