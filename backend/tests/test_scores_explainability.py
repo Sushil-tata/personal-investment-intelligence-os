@@ -1,12 +1,18 @@
 from fastapi.testclient import TestClient
+from fastapi import FastAPI
 
-from piios_backend.main import app
+from piios_backend.api.routes import scores
 from piios_backend.services.live_feeds import live_feeds
 
-client = TestClient(app)
+
+def _test_client() -> TestClient:
+    app = FastAPI()
+    app.include_router(scores.router, prefix="/api/v1")
+    return TestClient(app)
 
 
 def test_scores_explainability_endpoint_shape(monkeypatch) -> None:
+    client = _test_client()
     monkeypatch.setattr(live_feeds, "_can_attempt", lambda: False)
     response = client.get("/api/v1/scores/explainability", params={"limit": 5})
     assert response.status_code == 200

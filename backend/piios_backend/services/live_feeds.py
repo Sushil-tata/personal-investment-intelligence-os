@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import math
 from statistics import mean
 
+import pandas as pd
 import yfinance as yf
 
 from piios_backend.core.config import settings
@@ -178,9 +179,51 @@ class QuoteSnapshot:
         return ((self.close - self.prev_close) / self.prev_close) * 100
 
 
+@dataclass
+class HistorySnapshot:
+    ticker: str
+    provider: str
+    mode: DataMode
+    as_of: str | None
+    is_stale: bool
+    fallback_reason: str | None
+    seeded_input: bool
+    frame: pd.DataFrame | None
+    error: str | None = None
+
+
+@dataclass
+class FundamentalsSnapshot:
+    ticker: str
+    provider: str
+    mode: DataMode
+    as_of: str | None
+    is_stale: bool
+    fallback_reason: str | None
+    seeded_input: bool
+    info: dict[str, object]
+    error: str | None = None
+
+
+@dataclass
+class FxRateSnapshot:
+    pair: str
+    provider: str
+    mode: DataMode
+    as_of: str | None
+    is_stale: bool
+    fallback_reason: str | None
+    seeded_input: bool
+    rate: float | None
+    error: str | None = None
+
+
 class LiveFeedService:
     def __init__(self) -> None:
         self._cooldown_until = datetime.min.replace(tzinfo=timezone.utc)
+
+    def _allow_synthetic_fallbacks(self) -> bool:
+        return bool(settings.allow_synthetic_market_fallbacks)
 
     def _enabled(self) -> bool:
         return settings.live_market_feeds
@@ -204,6 +247,208 @@ class LiveFeedService:
         except Exception:
             self._trip_cooldown()
             return None
+
+    def history(self, ticker: str, period: str = "1y", interval: str = "1d", timeout: int = 8) -> HistorySnapshot:
+        if not self._enabled():
+            return HistorySnapshot(
+                ticker=ticker,
+                provider="yfinance",
+                mode="UNAVAILABLE",
+                as_of=None,
+                is_stale=True,
+                fallback_reason="live_market_feeds_disabled",
+                seeded_input=False,
+                frame=None,
+                error="live_market_feeds_disabled",
+            )
+        if datetime.now(timezone.utc) < self._cooldown_until:
+            return HistorySnapshot(
+                ticker=ticker,
+                provider="yfinance",
+                mode="CACHED",
+                as_of=None,
+                is_stale=True,
+                fallback_reason="cooldown_active_after_previous_failure",
+                seeded_input=False,
+                frame=None,
+                error="cooldown_active",
+            )
+        try:
+            frame = yf.Ticker(ticker).history(period=period, interval=interval, auto_adjust=False, timeout=timeout)
+            if frame is None or frame.empty:
+                return HistorySnapshot(
+                    ticker=ticker,
+                    provider="yfinance",
+                    mode="UNAVAILABLE",
+                    as_of=None,
+                    is_stale=True,
+                    fallback_reason="empty_history",
+                    seeded_input=False,
+                    frame=None,
+                    error="empty_history",
+                )
+            return HistorySnapshot(
+                ticker=ticker,
+                provider="yfinance",
+                mode="LIVE",
+                as_of=frame.index[-1].isoformat(),
+                is_stale=False,
+                fallback_reason=None,
+                seeded_input=False,
+                frame=frame,
+            )
+        except Exception as exc:
+            self._trip_cooldown()
+            return HistorySnapshot(
+                ticker=ticker,
+                provider="yfinance",
+                mode="UNAVAILABLE",
+                as_of=None,
+                is_stale=True,
+                fallback_reason=f"{type(exc).__name__}: {exc}",
+                seeded_input=False,
+                frame=None,
+                error=f"{type(exc).__name__}: {exc}",
+            )
+
+    def fundamentals(self, ticker: str, timeout: int = 8) -> FundamentalsSnapshot:
+        if not self._enabled():
+            return FundamentalsSnapshot(
+                ticker=ticker,
+                provider="yfinance",
+                mode="UNAVAILABLE",
+                as_of=None,
+                is_stale=True,
+                fallback_reason="live_market_feeds_disabled",
+                seeded_input=False,
+                info={},
+                error="live_market_feeds_disabled",
+            )
+        if datetime.now(timezone.utc) < self._cooldown_until:
+            return FundamentalsSnapshot(
+                ticker=ticker,
+                provider="yfinance",
+                mode="CACHED",
+                as_of=None,
+                is_stale=True,
+                fallback_reason="cooldown_active_after_previous_failure",
+                seeded_input=False,
+                info={},
+                error="cooldown_active",
+            )
+        try:
+            info = yf.Ticker(ticker).info or {}
+            if not info:
+                return FundamentalsSnapshot(
+                    ticker=ticker,
+                    provider="yfinance",
+                    mode="UNAVAILABLE",
+                    as_of=None,
+                    is_stale=True,
+                    fallback_reason="empty_fundamentals",
+                    seeded_input=False,
+                    info={},
+                    error="empty_fundamentals",
+                )
+            return FundamentalsSnapshot(
+                ticker=ticker,
+                provider="yfinance",
+                mode="LIVE",
+                as_of=_now_iso(),
+                is_stale=False,
+                fallback_reason=None,
+                seeded_input=False,
+                info=info,
+            )
+        except Exception as exc:
+            self._trip_cooldown()
+            return FundamentalsSnapshot(
+                ticker=ticker,
+                provider="yfinance",
+                mode="UNAVAILABLE",
+                as_of=None,
+                is_stale=True,
+                fallback_reason=f"{type(exc).__name__}: {exc}",
+                seeded_input=False,
+                info={},
+                error=f"{type(exc).__name__}: {exc}",
+            )
+
+    def fx_rate(self, from_currency: str, to_currency: str, timeout: int = 8) -> FxRateSnapshot:
+        pair = f"{from_currency.upper()}/{to_currency.upper()}"
+        if from_currency.upper() == to_currency.upper():
+            return FxRateSnapshot(
+                pair=pair,
+                provider="identity",
+                mode="LIVE",
+                as_of=_now_iso(),
+                is_stale=False,
+                fallback_reason=None,
+                seeded_input=False,
+                rate=1.0,
+            )
+        if not self._enabled():
+            return FxRateSnapshot(
+                pair=pair,
+                provider="yfinance",
+                mode="UNAVAILABLE",
+                as_of=None,
+                is_stale=True,
+                fallback_reason="live_market_feeds_disabled",
+                seeded_input=False,
+                rate=None,
+                error="live_market_feeds_disabled",
+            )
+        if datetime.now(timezone.utc) < self._cooldown_until:
+            return FxRateSnapshot(
+                pair=pair,
+                provider="yfinance",
+                mode="CACHED",
+                as_of=None,
+                is_stale=True,
+                fallback_reason="cooldown_active_after_previous_failure",
+                seeded_input=False,
+                rate=None,
+                error="cooldown_active",
+            )
+
+        symbol_candidates = [f"{from_currency.upper()}{to_currency.upper()}=X", f"{to_currency.upper()}{from_currency.upper()}=X"]
+        for symbol in symbol_candidates:
+            try:
+                frame = yf.Ticker(symbol).history(period="5d", interval="1d", auto_adjust=False, timeout=timeout)
+                if frame is None or frame.empty:
+                    continue
+                last = float(frame["Close"].iloc[-1])
+                if symbol.startswith(f"{from_currency.upper()}{to_currency.upper()}"):
+                    rate = last
+                else:
+                    if last == 0:
+                        continue
+                    rate = 1.0 / last
+                return FxRateSnapshot(
+                    pair=pair,
+                    provider="yfinance",
+                    mode="LIVE",
+                    as_of=frame.index[-1].isoformat(),
+                    is_stale=False,
+                    fallback_reason=None,
+                    seeded_input=False,
+                    rate=rate,
+                )
+            except Exception:
+                continue
+
+        return FxRateSnapshot(
+            pair=pair,
+            provider="yfinance",
+            mode="UNAVAILABLE",
+            as_of=None,
+            is_stale=True,
+            fallback_reason="fx_pair_unavailable",
+            seeded_input=False,
+            rate=None,
+            error="fx_pair_unavailable",
+        )
 
     def sector_for_ticker(self, ticker: str) -> str:
         fallback = SECTOR_FALLBACKS.get(ticker, "Diversified")
@@ -253,7 +498,7 @@ class LiveFeedService:
                     self._trip_cooldown()
                     break
 
-        if not items:
+        if not items and self._allow_synthetic_fallbacks():
             return ResearchFeedResponse(
                 items=[
                     ResearchDocumentResponse(
@@ -287,7 +532,7 @@ class LiveFeedService:
                 }
             )
 
-        if not stock_scores:
+        if not stock_scores and self._allow_synthetic_fallbacks():
             stock_scores = [
                 {
                     "ticker": "NVDA",
@@ -308,7 +553,7 @@ class LiveFeedService:
         return {
             "stock_scores": stock_scores,
             "source_scores": [
-                {"source": "Yahoo Finance Live Feed", "score": 84 if self._can_attempt() else 72},
+                {"source": "Yahoo Finance Live Feed", "score": 84 if self._can_attempt() else 0},
                 {"source": "Independent Research", "score": 79},
             ],
         }
@@ -385,7 +630,7 @@ class LiveFeedService:
                 except Exception:
                     continue
 
-        if not rows:
+        if not rows and self._allow_synthetic_fallbacks():
             fallback_tickers = [
                 "MSFT", "NVDA", "AAPL", "PG", "KO", "COST", "TSLA", "XOM", "DE", "UBER",
                 "ADBE", "CRM", "NOW", "PANW", "AVGO", "AMZN", "MCD", "WMT", "QCOM", "TXN",
@@ -609,7 +854,7 @@ class LiveFeedService:
                 except Exception:
                     continue
 
-        if not rows:
+        if not rows and self._allow_synthetic_fallbacks():
             rows = self._fallback_explainability_rows(TOP_RECOMMENDATION_UNIVERSE[:clamped_limit])
 
         universe_values = [row["composite"] for row in rows]

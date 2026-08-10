@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     vector_collection: str = "piios_research_memory"
     model_version: str = "piios-model-0.1.0"
     live_market_feeds: bool = True
+    allow_synthetic_market_fallbacks: bool = False
+    run_db_migrations_in_tests: bool = False
     live_tickers: str = "NVDA,AVGO,MSFT,PG,KO,COST,TSLA,XOM,DE,UBER"
     portfolio_dual_run_enabled: bool = False
     portfolio_dual_run_money_tolerance: float = 0.01

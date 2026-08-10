@@ -77,10 +77,14 @@ class InvestorMandateOverride(BaseModel):
 
 class RecommendationGenerateRequest(BaseModel):
     portfolio_snapshot_id: str | None = None
+    portfolio_id: str | None = None
     investable_amount: float = Field(default=5000.0, gt=0)
     as_of_date: str | None = None
     market_data_mode: str | None = Field(default=None, description="auto|live|cached|development_seed")
     use_demo_portfolio: bool = False
+    investment_currency: str | None = None
+    base_currency: str = "USD"
+    eligible_markets: list[str] | None = None
     mandate_override: InvestorMandateOverride | None = None
 
 
@@ -135,6 +139,7 @@ class AllocationRecommendation(BaseModel):
     conditions_to_change: list[str]
     components: list[RecommendationScoreComponent]
     evidence: list[RecommendationEvidence]
+    diagnostics: dict[str, object] | None = None
 
 
 class PortfolioRecommendationResponse(BaseModel):
@@ -151,6 +156,16 @@ class PortfolioRecommendationResponse(BaseModel):
     advisory_only: bool = True
     portfolio_observations: list[PortfolioObservation]
     recommendations: list[AllocationRecommendation]
+    universe_summary: dict[str, object] | None = None
+    screening_summary: dict[str, object] | None = None
+    top_ranked_candidates: list[dict[str, object]] = Field(default_factory=list)
+    actionable_recommendations: list[dict[str, object]] = Field(default_factory=list)
+    existing_holding_actions: list[dict[str, object]] = Field(default_factory=list)
+    portfolio_before: dict[str, object] | None = None
+    portfolio_after: dict[str, object] | None = None
+    residual_cash: float | None = None
+    data_quality_summary: dict[str, object] | None = None
+    sensitivity: dict[str, object] | None = None
     assumptions: list[str]
     limitations: list[RecommendationLimitation]
 

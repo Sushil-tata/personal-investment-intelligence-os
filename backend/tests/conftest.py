@@ -19,6 +19,8 @@ def disable_live_feeds_for_tests():
 
 @pytest.fixture(scope="session", autouse=True)
 def ensure_postgres_schema_migrated() -> None:
+    if not settings.run_db_migrations_in_tests:
+        return
     if not settings.db_url.startswith("postgresql"):
         return
 

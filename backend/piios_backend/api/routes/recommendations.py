@@ -54,6 +54,10 @@ def top_recommendations(
 
 @router.post("/generate", response_model=PortfolioRecommendationResponse)
 def generate_recommendation(request: RecommendationGenerateRequest) -> PortfolioRecommendationResponse:
+    if request.use_demo_portfolio:
+        raise HTTPException(status_code=422, detail="use_demo_portfolio is only supported via /recommendations/demo")
+    if (request.market_data_mode or "").strip().lower() == "development_seed":
+        raise HTTPException(status_code=422, detail="development_seed mode is only supported via /recommendations/demo")
     try:
         return recommendation_mvp_service.generate(request)
     except ValueError as exc:
@@ -67,7 +71,7 @@ def generate_recommendation_demo() -> PortfolioRecommendationResponse:
     return recommendation_mvp_service.generate(
         RecommendationGenerateRequest(
             investable_amount=5000.0,
-            market_data_mode="auto",
+            market_data_mode="development_seed",
             use_demo_portfolio=True,
         )
     )

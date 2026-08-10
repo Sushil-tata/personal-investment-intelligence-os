@@ -256,6 +256,8 @@ def generate_investment_recommendation(
     use_demo_portfolio: bool = True,
     portfolio_snapshot_id: str | None = None,
     as_of_date: str | None = None,
+    base_currency: str = "USD",
+    eligible_markets: list[str] | None = None,
     mandate_override: dict | None = None,
 ) -> ApiResult:
     body = {
@@ -264,10 +266,19 @@ def generate_investment_recommendation(
         "as_of_date": as_of_date,
         "market_data_mode": market_data_mode,
         "use_demo_portfolio": use_demo_portfolio,
+        "base_currency": base_currency,
+        "eligible_markets": eligible_markets,
         "mandate_override": mandate_override,
     }
 
     def _parse(d):
+        universe_summary = d.get("universe_summary")
+        screening_summary = d.get("screening_summary")
+        portfolio_before = d.get("portfolio_before")
+        portfolio_after = d.get("portfolio_after")
+        data_quality_summary = d.get("data_quality_summary")
+        sensitivity = d.get("sensitivity")
+
         return m.PortfolioRecommendationResponse(
             recommendation_id=d["recommendation_id"],
             status=d["status"],
@@ -310,6 +321,16 @@ def generate_investment_recommendation(
                 )
                 for row in d["recommendations"]
             ],
+            universe_summary=m.UniverseSummary(**universe_summary) if universe_summary else None,
+            screening_summary=m.ScreeningSummary(**screening_summary) if screening_summary else None,
+            top_ranked_candidates=[m.CrossMarketCandidate(**row) for row in d.get("top_ranked_candidates", [])],
+            actionable_recommendations=list(d.get("actionable_recommendations", [])),
+            existing_holding_actions=list(d.get("existing_holding_actions", [])),
+            portfolio_before=m.PortfolioExposureSummary(**portfolio_before) if portfolio_before else None,
+            portfolio_after=m.PortfolioExposureSummary(**portfolio_after) if portfolio_after else None,
+            residual_cash=d.get("residual_cash"),
+            data_quality_summary=m.DataQualitySummary(**data_quality_summary) if data_quality_summary else None,
+            sensitivity=m.SensitivitySummary(**sensitivity) if sensitivity else None,
             assumptions=list(d.get("assumptions", [])),
             limitations=[m.RecommendationLimitation(**l) for l in d.get("limitations", [])],
         )

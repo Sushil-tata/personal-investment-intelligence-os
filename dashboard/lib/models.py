@@ -218,6 +218,95 @@ class TopRecommendation:
 
 
 @dataclass
+class CrossMarketCandidate:
+    market: str
+    ticker: str
+    company: str
+    exchange: str | None
+    issuer_country: str | None
+    trading_currency: str | None
+    instrument_type: str | None
+    status: str
+    evidence_coverage: str
+    security_attractiveness_score: float | None
+    portfolio_suitability_score: float | None
+    combined_recommendation_score: float | None
+    confidence: float | None
+    action: str
+    challenge_flags: list[str]
+    rank: int | None = None
+    allocation_usd: float | None = None
+    allocation_local: float | None = None
+    units: float | None = None
+    portfolio_role: str | None = None
+    local_value: float | None = None
+    base_value: float | None = None
+    local_currency: str | None = None
+    base_currency: str | None = None
+    provider_symbol: str | None = None
+    history_length: int | None = None
+    current_price: float | None = None
+    quality: float | None = None
+    growth: float | None = None
+    valuation: float | None = None
+    momentum: float | None = None
+    risk: float | None = None
+    missing_fields: list[str] = field(default_factory=list)
+    top_positive_contributors: list[dict] = field(default_factory=list)
+    top_negative_contributors: list[dict] = field(default_factory=list)
+    metric_evidence: list[dict] = field(default_factory=list)
+
+
+@dataclass
+class PortfolioExposureSummary:
+    base_currency: str
+    total_value: float
+    country_exposure: list[dict]
+    currency_exposure: list[dict]
+    sector_exposure: list[dict]
+    concentration: dict
+    top_positions: list[dict]
+    valuation_breakdown: dict | None = None
+
+
+@dataclass
+class UniverseSummary:
+    markets: dict
+    total_candidates: int
+    eligible_candidates: int
+    partial_candidates: int
+    ineligible_candidates: int
+
+
+@dataclass
+class ScreeningSummary:
+    eligible_by_market: dict
+    partial_by_market: dict
+    ineligible_by_market: dict
+    excluded_reasons: list[dict]
+
+
+@dataclass
+class DataQualitySummary:
+    providers: list[str]
+    latest_timestamps: dict
+    missing_inputs: list[str]
+    excluded_securities: list[dict]
+    portfolio_total_mismatch: bool
+    portfolio_total_source: float | None = None
+    portfolio_total_authoritative: float | None = None
+    market_retrieval_stats: dict | None = None
+    fx_availability: dict | None = None
+
+
+@dataclass
+class SensitivitySummary:
+    classification: str
+    scenarios: list[dict]
+    top_candidates_stable: bool
+
+
+@dataclass
 class TacticalSignal:
     signal_id: str
     ticker: str
@@ -535,5 +624,15 @@ class PortfolioRecommendationResponse:
     advisory_only: bool
     portfolio_observations: list[PortfolioObservation]
     recommendations: list[AllocationRecommendation]
-    assumptions: list[str]
-    limitations: list[RecommendationLimitation]
+    universe_summary: UniverseSummary | None = None
+    screening_summary: ScreeningSummary | None = None
+    top_ranked_candidates: list[CrossMarketCandidate] = field(default_factory=list)
+    actionable_recommendations: list[dict] = field(default_factory=list)
+    existing_holding_actions: list[dict] = field(default_factory=list)
+    portfolio_before: PortfolioExposureSummary | None = None
+    portfolio_after: PortfolioExposureSummary | None = None
+    residual_cash: float | None = None
+    data_quality_summary: DataQualitySummary | None = None
+    sensitivity: SensitivitySummary | None = None
+    assumptions: list[str] = field(default_factory=list)
+    limitations: list[RecommendationLimitation] = field(default_factory=list)
