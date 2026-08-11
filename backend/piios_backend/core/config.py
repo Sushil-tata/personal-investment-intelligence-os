@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_name: str = "Personal Investment Intelligence OS"
     short_name: str = "PIIOS"
-    app_version: str = "0.1.0"
+    app_version: str = "0.3.2"
     api_prefix: str = "/api/v1"
     env: str = "dev"
     db_url: str = "postgresql+psycopg://piios:piios@localhost:5432/piios_db"
@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     vector_backend: str = "chroma"
     vector_path: str = "./.vector_store"
     vector_collection: str = "piios_research_memory"
-    model_version: str = "piios-model-0.1.0"
+    model_version: str = "piios-model-0.3.2"
     live_market_feeds: bool = True
     allow_synthetic_market_fallbacks: bool = False
     run_db_migrations_in_tests: bool = False

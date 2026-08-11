@@ -3,6 +3,8 @@
 !.env.example
 
 .venv/
+backend/.venv/
+dashboard/.venv/
 venv/
 env/
 
@@ -11,6 +13,8 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+runtime/*.json
+backend/piios_backend/data/universe_validation.json
 
 node_modules/
 dist/

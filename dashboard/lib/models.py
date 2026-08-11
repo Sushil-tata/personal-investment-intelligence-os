@@ -284,6 +284,8 @@ class ScreeningSummary:
     partial_by_market: dict
     ineligible_by_market: dict
     excluded_reasons: list[dict]
+    discovery_size_counts: dict | None = None
+    discovery_status_counts: dict | None = None
 
 
 @dataclass
@@ -405,6 +407,7 @@ class ShadowIdentityDiagnosticsResponse:
 class HealthResponse:
     status: str
     product: str
+    version: str | None = None
 
 
 # --- Wave 2B decision-contracts models -------------------------------------

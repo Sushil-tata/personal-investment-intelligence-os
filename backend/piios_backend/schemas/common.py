@@ -8,6 +8,7 @@ class AdvisoryResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     product: str
+    version: str | None = None
 from enum import Enum
 
 from pydantic import BaseModel, HttpUrl

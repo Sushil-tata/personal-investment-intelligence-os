@@ -1,14 +1,16 @@
 [project]
 name = "piios_backend"
-version = "0.1.0"
+version = "0.3.2"
 description = "PIIOS advisory-only investment intelligence backend"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.12"
 dependencies = [
     "fastapi>=0.115.0,<1.0.0",
     "uvicorn[standard]>=0.30.0,<1.0.0",
     "sqlmodel>=0.0.22,<1.0.0",
+    "sqlalchemy>=2.0.35,<3.0.0",
     "psycopg[binary]>=3.2.0,<4.0.0",
     "alembic>=1.13.2,<2.0.0",
+    "pydantic>=2.9.0,<3.0.0",
     "pydantic-settings>=2.4.0,<3.0.0",
     "python-multipart>=0.0.9,<1.0.0",
     "pyyaml>=6.0.2,<7.0.0",
@@ -21,6 +23,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+dashboard = [
+    "streamlit>=1.36.0,<2.0.0",
+    "requests>=2.32.0,<3.0.0",
+    "matplotlib>=3.8.0,<4.0.0",
+    "numpy>=1.26.0,<3.0.0"
+]
 dev = [
     "pytest>=8.3.0,<9.0.0",
     "httpx>=0.27.0,<1.0.0",
@@ -39,3 +47,7 @@ include = ["piios_backend*"]
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = [
+    "postgres: tests that require a running PostgreSQL instance",
+    "live: tests that require live network/provider access"
+]

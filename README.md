@@ -1,6 +1,6 @@
 # Personal Investment Intelligence OS (PIIOS)
 
-Standalone advisory-only and research-only investment intelligence platform.
+PIIOS is an advisory-only and research-only investment intelligence platform.
 
 Product boundary:
 - No broker integration
@@ -9,137 +9,141 @@ Product boundary:
 - No margin/leverage execution
 - No broker credential storage
 
-## Stack
+Current packaged application version: **PIIOS 0.3.2**.
 
-- FastAPI backend package: piios_backend
-- Streamlit MVP dashboard package: piios_frontend style UI under dashboard
-- PostgreSQL database: piios_db
-- LangGraph orchestration for recommendation workflow
-- Chroma vector store collection: piios_research_memory
-- APScheduler for recurring jobs
-- Alembic for migrations
+## Prerequisites
 
-## Buckets
+- Python **3.11.x** (supported range: `>=3.11,<3.12`)
+- Docker Desktop (for local PostgreSQL)
+- macOS/Linux shell with `make`
 
-The system supports four investment buckets:
-- Education
-- Retirement
-- Strategic Alpha
-- Tactical Opportunities
+Do not use system-wide packages for project runtime. Use the repository-local virtual environment only.
 
-Every holding, watchlist idea, recommendation, and tactical signal can map to one bucket.
+## Canonical Local Setup
 
-## LangGraph workflow
-
-Nodes:
-1. portfolio_context_node
-2. research_ingestion_node
-3. source_credibility_node
-4. thesis_generation_node
-5. bear_case_node
-6. portfolio_fit_node
-7. risk_check_node
-8. recommendation_node
-9. human_review_node
-
-Gates:
-- recommendation output is blocked unless portfolio_fit_node and risk_check_node pass.
-- accepted status requires human_review_node approval.
-
-## FastAPI routes
-
-- /api/v1/portfolio
-- /api/v1/holdings
-- /api/v1/watchlist
-- /api/v1/research
-- /api/v1/scores
-- /api/v1/recommendations
-- /api/v1/tactical-signals
-- /api/v1/risk
-- /api/v1/journal
-- /api/v1/graph/run
-- /api/v1/graph/status
-
-CSV import/export is included for:
-- holdings
-- watchlist
-- recommendations
-- journal entries
-- portfolio snapshots
-
-## Setup
-
-1. Start PostgreSQL
+From repository root:
 
 ```bash
-docker compose up -d
+make setup
+cp .env.example .env
 ```
 
-2. Backend install and run
+This creates and manages the only supported development environment:
+
+```text
+<repo>/.venv
+```
+
+## Environment Variables
+
+Environment is loaded from `.env` by backend settings.
+
+Key variables (see `.env.example` for full list):
+- `PIIOS_ENV`
+- `PIIOS_API_PREFIX`
+- `PIIOS_DB_URL`
+- `PIIOS_CORS_ORIGINS`
+- `PIIOS_API_BASE`
+- `PIIOS_VECTOR_BACKEND`
+- `PIIOS_VECTOR_PATH`
+- `PIIOS_VECTOR_COLLECTION`
+- `PIIOS_MODEL_VERSION`
+- `PIIOS_LIVE_MARKET_FEEDS`
+- `PIIOS_LIVE_TICKERS`
+
+## PostgreSQL
+
+Supported local database flow:
 
 ```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .
-uvicorn piios_backend.main:app --reload --host 127.0.0.1 --port 8000
+make db-up
 ```
 
-3. Dashboard run
+Default local DB config:
+- host: `localhost`
+- port: `5432`
+- database: `piios_db`
+- user: `piios`
+- password: `piios`
+
+## Migrations (Alembic)
+
+Apply migrations:
 
 ```bash
-cd dashboard
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-streamlit run Home.py
+make migrate
 ```
 
-4. Tests
+Manual checks:
 
 ```bash
 cd backend
-pytest
+../.venv/bin/alembic heads
+../.venv/bin/alembic current
 ```
 
-## Developer Setup Notes
+## Backend Startup
 
-Current clean-clone setup that is known to work from repository root:
+Start FastAPI from repo root:
 
 ```bash
-python3.11 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -e backend
-python -m pip install pytest
+make backend
 ```
 
-Notes:
-- `pip install -e backend` currently does not install `pytest`.
-- A separate `pytest` installation is currently required for test execution in a fresh clone.
-- `backend/piios_backend.egg-info/SOURCES.txt` is tracked generated metadata and may change during editable install.
-
-Preferred future improvement:
-- Adopt repository-managed development dependencies (for example, a `dev` optional dependency group or equivalent) so test tooling is installed consistently with one setup command.
-
-## Wave 2B Reproducible Gate
-
-Run the full milestone acceptance sequence from the repository root:
+Health checks:
 
 ```bash
-bash scripts/wave2b_reproducible_test_gate.sh
+make health
 ```
 
-This gate executes, in order:
-- Wave 2B M1 domain contracts
-- Wave 2B M2 persistence
-- Wave 2B M3 deterministic decision engine
-- Wave 2A.3 documented gate
-- Full backend plus piios test suite
+## Frontend Startup
 
-## Phase 1.5 upgrades included
+Start Streamlit from repo root:
 
-- yfinance adapter plus extension interfaces for Polygon, Alpha Vantage, FMP, Tiingo
-- APScheduler jobs: daily market refresh, daily watchlist score refresh, alert generation, weekly drift check, weekly recommendation refresh
-- Alembic migration assets and seed scripts
-- Guardrails enforced in API and model contracts
+```bash
+make frontend
+```
+
+Frontend uses `PIIOS_API_BASE` (default `http://127.0.0.1:8000/api/v1`).
+
+## Tests
+
+Run deterministic unit suite:
+
+```bash
+make test-unit
+```
+
+Run PostgreSQL integration suite:
+
+```bash
+make test-postgres
+```
+
+Run both:
+
+```bash
+make test
+```
+
+## Lint
+
+```bash
+make lint
+```
+
+## Live Market Data Behavior
+
+- Live market providers are controlled by `PIIOS_LIVE_MARKET_FEEDS`.
+- Provider-dependent checks should be treated as network/live smoke tests, separate from deterministic unit tests.
+
+## Troubleshooting
+
+- Backend import errors:
+	Use `make setup` and `make backend` from repo root. Do not run with ad-hoc `PYTHONPATH`.
+- Frontend cannot reach backend:
+	Confirm backend is running and `PIIOS_API_BASE` points to `http://127.0.0.1:8000/api/v1`.
+- Migration issues:
+	Ensure PostgreSQL is up (`make db-up`) before `make migrate`.
+- Wrong environment:
+	Use `.venv` in repo root only. Do not use `backend/.venv` or `dashboard/.venv`.

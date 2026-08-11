@@ -140,6 +140,43 @@ def _top_recommendation(d: dict) -> m.TopRecommendation:
         "ticker", "sector", "score", "daily_pct", "weekly_pct", "close", "volume_ratio", "recommended_action")})
 
 
+def _cross_market_candidate(d: dict) -> m.CrossMarketCandidate:
+    allowed = set(m.CrossMarketCandidate.__dataclass_fields__.keys())
+    return m.CrossMarketCandidate(**{k: v for k, v in d.items() if k in allowed})
+
+
+def _universe_summary(d: dict) -> m.UniverseSummary:
+    return m.UniverseSummary(
+        markets=d.get("markets", {}),
+        total_candidates=d.get("total_candidates", 0),
+        eligible_candidates=d.get("eligible_candidates", 0),
+        partial_candidates=d.get("partial_candidates", 0),
+        ineligible_candidates=d.get("ineligible_candidates", 0),
+    )
+
+
+def _data_quality_summary(d: dict) -> m.DataQualitySummary:
+    return m.DataQualitySummary(
+        providers=list(d.get("providers", [])),
+        latest_timestamps=d.get("latest_timestamps", {}),
+        missing_inputs=list(d.get("missing_inputs", [])),
+        excluded_securities=list(d.get("excluded_securities", [])),
+        portfolio_total_mismatch=bool(d.get("portfolio_total_mismatch", False)),
+        portfolio_total_source=d.get("portfolio_total_source"),
+        portfolio_total_authoritative=d.get("portfolio_total_authoritative"),
+        market_retrieval_stats=d.get("market_retrieval_stats"),
+        fx_availability=d.get("fx_availability"),
+    )
+
+
+def _sensitivity_summary(d: dict) -> m.SensitivitySummary:
+    return m.SensitivitySummary(
+        classification=d.get("classification", "UNKNOWN"),
+        scenarios=list(d.get("scenarios", [])),
+        top_candidates_stable=bool(d.get("top_candidates_stable", False)),
+    )
+
+
 def _tactical_signal(d: dict) -> m.TacticalSignal:
     return m.TacticalSignal(**{k: d.get(k) for k in (
         "signal_id", "ticker", "bucket", "status", "entry_zone", "invalidation", "target", "advisory_only")})
@@ -260,6 +297,9 @@ def generate_investment_recommendation(
     eligible_markets: list[str] | None = None,
     mandate_override: dict | None = None,
 ) -> ApiResult:
+    mode = (market_data_mode or "").strip().lower()
+    use_demo_endpoint = use_demo_portfolio or mode == "development_seed"
+
     body = {
         "portfolio_snapshot_id": portfolio_snapshot_id,
         "investable_amount": investable_amount,
@@ -274,6 +314,16 @@ def generate_investment_recommendation(
     def _parse(d):
         universe_summary = d.get("universe_summary")
         screening_summary = d.get("screening_summary")
+        screening = None
+        if screening_summary:
+            screening = m.ScreeningSummary(
+                eligible_by_market=screening_summary.get("eligible_by_market", {}),
+                partial_by_market=screening_summary.get("partial_by_market", {}),
+                ineligible_by_market=screening_summary.get("ineligible_by_market", {}),
+                excluded_reasons=list(screening_summary.get("excluded_reasons", [])),
+                discovery_size_counts=screening_summary.get("discovery_size_counts"),
+                discovery_status_counts=screening_summary.get("discovery_status_counts"),
+            )
         portfolio_before = d.get("portfolio_before")
         portfolio_after = d.get("portfolio_after")
         data_quality_summary = d.get("data_quality_summary")
@@ -321,21 +371,23 @@ def generate_investment_recommendation(
                 )
                 for row in d["recommendations"]
             ],
-            universe_summary=m.UniverseSummary(**universe_summary) if universe_summary else None,
-            screening_summary=m.ScreeningSummary(**screening_summary) if screening_summary else None,
-            top_ranked_candidates=[m.CrossMarketCandidate(**row) for row in d.get("top_ranked_candidates", [])],
+            universe_summary=_universe_summary(universe_summary) if universe_summary else None,
+            screening_summary=screening,
+            top_ranked_candidates=[_cross_market_candidate(row) for row in d.get("top_ranked_candidates", [])],
             actionable_recommendations=list(d.get("actionable_recommendations", [])),
             existing_holding_actions=list(d.get("existing_holding_actions", [])),
             portfolio_before=m.PortfolioExposureSummary(**portfolio_before) if portfolio_before else None,
             portfolio_after=m.PortfolioExposureSummary(**portfolio_after) if portfolio_after else None,
             residual_cash=d.get("residual_cash"),
-            data_quality_summary=m.DataQualitySummary(**data_quality_summary) if data_quality_summary else None,
-            sensitivity=m.SensitivitySummary(**sensitivity) if sensitivity else None,
+            data_quality_summary=_data_quality_summary(data_quality_summary) if data_quality_summary else None,
+            sensitivity=_sensitivity_summary(sensitivity) if sensitivity else None,
             assumptions=list(d.get("assumptions", [])),
             limitations=[m.RecommendationLimitation(**l) for l in d.get("limitations", [])],
         )
 
-    return _map(_request("POST", "/recommendations/generate", json=body), _parse)
+    path = "/recommendations/demo" if use_demo_endpoint else "/recommendations/generate"
+    request_kwargs = {} if use_demo_endpoint else {"json": body}
+    return _map(_request("POST", path, **request_kwargs), _parse)
 
 
 # --- Risk / governance / research ------------------------------------------

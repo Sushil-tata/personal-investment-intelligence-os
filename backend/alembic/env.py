@@ -6,7 +6,9 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 from sqlmodel import SQLModel
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+# Ensure migrations can import both backend and root-domain packages
+# when invoked from backend/ without manual absolute PYTHONPATH.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from piios_backend.models import entities  # noqa: F401
 from piios.decision_contracts.infrastructure import sqlmodel_entities as decision_sqlmodel_entities  # noqa: F401

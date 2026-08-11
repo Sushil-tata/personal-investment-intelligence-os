@@ -10,12 +10,7 @@ engine = create_engine(settings.db_url, echo=False)
 
 
 def init_db() -> None:
-    global engine
-    try:
-        SQLModel.metadata.create_all(engine)
-    except Exception:
-        engine = create_engine("sqlite:///./piios_db.sqlite", echo=False)
-        SQLModel.metadata.create_all(engine)
+    SQLModel.metadata.create_all(engine)
 
 
 def get_session():
