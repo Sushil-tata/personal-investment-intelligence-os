@@ -4,12 +4,27 @@ from dataclasses import asdict
 import json
 from pathlib import Path
 
+import pandas as pd
+
 from piios_backend.competition.ledger_bridge import decisions_to_events, load_core_decisions
 from piios_backend.competition.models import APPLICATION_RETRIEVAL_TIMESTAMP, CoreDecision, StrategyDefinition
 from piios_backend.competition.registry import StrategyRegistry, default_registry
 from piios_backend.competition.runner import run_competition
 from piios_backend.prospective_ledger.models import ProspectiveDecisionRecord
 from piios_backend.prospective_ledger.store import ProspectiveLedgerStore
+
+
+class FakePriceProvider:
+    def __init__(self, series_by_ticker: dict[str, list[tuple[str, float]]]) -> None:
+        self._series_by_ticker = series_by_ticker
+
+    def close_series(self, ticker: str) -> pd.Series:
+        rows = self._series_by_ticker.get(ticker, [])
+        if not rows:
+            return pd.Series(dtype=float)
+        idx = pd.to_datetime([d for d, _ in rows]).normalize()
+        values = [float(v) for _, v in rows]
+        return pd.Series(values, index=idx).sort_index()
 
 
 def _seed_record(*, decision_id: str, as_of_date: str, ticker: str, allocation: float, run_timestamp: str) -> ProspectiveDecisionRecord:
@@ -110,8 +125,29 @@ def test_competition_replay_is_deterministic(tmp_path: Path) -> None:
 
     out1 = tmp_path / "out1"
     out2 = tmp_path / "out2"
-    first = run_competition(prospective_db_path=db_path, output_root=out1, monthly_contribution=5000.0)
-    second = run_competition(prospective_db_path=db_path, output_root=out2, monthly_contribution=5000.0)
+    provider = FakePriceProvider(
+        {
+            "AAA.NS": [("2026-01-15", 100.0), ("2026-01-31", 110.0)],
+            "BBB.NS": [("2026-02-15", 100.0), ("2026-02-28", 90.0)],
+            "NIFTYBEES.NS": [("2026-01-15", 200.0), ("2026-01-31", 202.0), ("2026-02-15", 202.0), ("2026-02-28", 204.0)],
+            "SPY": [("2026-01-15", 300.0), ("2026-01-31", 303.0), ("2026-02-15", 303.0), ("2026-02-28", 306.0)],
+            "ES3.SI": [("2026-01-15", 3.0), ("2026-01-31", 3.03), ("2026-02-15", 3.03), ("2026-02-28", 3.06)],
+        }
+    )
+    first = run_competition(
+        prospective_db_path=db_path,
+        output_root=out1,
+        monthly_contribution=5000.0,
+        price_provider=provider,
+        today=pd.Timestamp("2026-03-05").date(),
+    )
+    second = run_competition(
+        prospective_db_path=db_path,
+        output_root=out2,
+        monthly_contribution=5000.0,
+        price_provider=provider,
+        today=pd.Timestamp("2026-03-05").date(),
+    )
 
     assert [asdict(x) for x in first.leaderboard] == [asdict(x) for x in second.leaderboard]
     assert [asdict(x) for x in first.snapshots] == [asdict(x) for x in second.snapshots]
@@ -121,7 +157,22 @@ def test_fair_capital_rules_and_benchmark_contestants(tmp_path: Path) -> None:
     db_path = tmp_path / "prospective.db"
     _seed_db(db_path)
 
-    result = run_competition(prospective_db_path=db_path, output_root=tmp_path / "out", monthly_contribution=5000.0)
+    provider = FakePriceProvider(
+        {
+            "AAA.NS": [("2026-01-15", 100.0), ("2026-01-31", 110.0)],
+            "BBB.NS": [("2026-02-15", 100.0), ("2026-02-28", 90.0)],
+            "NIFTYBEES.NS": [("2026-01-15", 200.0), ("2026-01-31", 202.0), ("2026-02-15", 202.0), ("2026-02-28", 204.0)],
+            "SPY": [("2026-01-15", 300.0), ("2026-01-31", 303.0), ("2026-02-15", 303.0), ("2026-02-28", 306.0)],
+            "ES3.SI": [("2026-01-15", 3.0), ("2026-01-31", 3.03), ("2026-02-15", 3.03), ("2026-02-28", 3.06)],
+        }
+    )
+    result = run_competition(
+        prospective_db_path=db_path,
+        output_root=tmp_path / "out",
+        monthly_contribution=5000.0,
+        price_provider=provider,
+        today=pd.Timestamp("2026-03-05").date(),
+    )
     expected = {"PIIOS_CORE", "NIFTY50_V1", "SP500_V1", "STI_V1", "CASH_V1"}
     got = {row.strategy_id for row in result.leaderboard}
     assert got == expected
@@ -134,7 +185,23 @@ def test_fair_capital_rules_and_benchmark_contestants(tmp_path: Path) -> None:
 def test_no_lookahead_for_earlier_months(tmp_path: Path) -> None:
     base_db = tmp_path / "base.db"
     _seed_db(base_db)
-    base = run_competition(prospective_db_path=base_db, output_root=tmp_path / "out_base", monthly_contribution=5000.0)
+    provider_base = FakePriceProvider(
+        {
+            "AAA.NS": [("2026-01-15", 100.0), ("2026-01-31", 110.0), ("2026-03-31", 300.0)],
+            "BBB.NS": [("2026-02-15", 100.0), ("2026-02-28", 90.0), ("2026-03-31", 10.0)],
+            "CCC.NS": [("2026-03-15", 100.0), ("2026-03-31", 120.0)],
+            "NIFTYBEES.NS": [("2026-01-15", 200.0), ("2026-01-31", 202.0), ("2026-02-15", 202.0), ("2026-02-28", 204.0), ("2026-03-31", 190.0)],
+            "SPY": [("2026-01-15", 300.0), ("2026-01-31", 303.0), ("2026-02-15", 303.0), ("2026-02-28", 306.0), ("2026-03-31", 330.0)],
+            "ES3.SI": [("2026-01-15", 3.0), ("2026-01-31", 3.03), ("2026-02-15", 3.03), ("2026-02-28", 3.06), ("2026-03-31", 2.8)],
+        }
+    )
+    base = run_competition(
+        prospective_db_path=base_db,
+        output_root=tmp_path / "out_base",
+        monthly_contribution=5000.0,
+        price_provider=provider_base,
+        today=pd.Timestamp("2026-03-31").date(),
+    )
 
     changed_db = tmp_path / "changed.db"
     _seed_db(changed_db)
@@ -150,7 +217,13 @@ def test_no_lookahead_for_earlier_months(tmp_path: Path) -> None:
             )
         ]
     )
-    changed = run_competition(prospective_db_path=changed_db, output_root=tmp_path / "out_changed", monthly_contribution=5000.0)
+    changed = run_competition(
+        prospective_db_path=changed_db,
+        output_root=tmp_path / "out_changed",
+        monthly_contribution=5000.0,
+        price_provider=provider_base,
+        today=pd.Timestamp("2026-03-31").date(),
+    )
 
     base_month = [s for s in base.snapshots if s.as_of_date.startswith("2026-01") and s.strategy_id == "PIIOS_CORE"][0]
     changed_month = [s for s in changed.snapshots if s.as_of_date.startswith("2026-01") and s.strategy_id == "PIIOS_CORE"][0]
@@ -161,7 +234,22 @@ def test_runtime_artifacts_written(tmp_path: Path) -> None:
     db_path = tmp_path / "prospective.db"
     _seed_db(db_path)
     out = tmp_path / "out"
-    run_competition(prospective_db_path=db_path, output_root=out, monthly_contribution=5000.0)
+    provider = FakePriceProvider(
+        {
+            "AAA.NS": [("2026-01-15", 100.0), ("2026-01-31", 110.0)],
+            "BBB.NS": [("2026-02-15", 100.0), ("2026-02-28", 90.0)],
+            "NIFTYBEES.NS": [("2026-01-15", 200.0), ("2026-01-31", 202.0), ("2026-02-15", 202.0), ("2026-02-28", 204.0)],
+            "SPY": [("2026-01-15", 300.0), ("2026-01-31", 303.0), ("2026-02-15", 303.0), ("2026-02-28", 306.0)],
+            "ES3.SI": [("2026-01-15", 3.0), ("2026-01-31", 3.03), ("2026-02-15", 3.03), ("2026-02-28", 3.06)],
+        }
+    )
+    run_competition(
+        prospective_db_path=db_path,
+        output_root=out,
+        monthly_contribution=5000.0,
+        price_provider=provider,
+        today=pd.Timestamp("2026-03-05").date(),
+    )
 
     expected = {
         "competition_registry.json",
@@ -176,6 +264,59 @@ def test_runtime_artifacts_written(tmp_path: Path) -> None:
     summary = json.loads((out / "competition_summary.json").read_text(encoding="utf-8"))
     assert "current_rank_1" in summary
     assert "investment_conclusion" in summary
+
+
+def test_piios_core_weighted_real_return_matches_expected(tmp_path: Path) -> None:
+    db_path = tmp_path / "prospective.db"
+    store = ProspectiveLedgerStore(db_path)
+    store.init()
+    store.append(
+        [
+            _seed_record(
+                decision_id="d1",
+                as_of_date="2026-01-15",
+                ticker="AAA.NS",
+                allocation=1000.0,
+                run_timestamp="2026-01-15T10:00:00Z",
+            ),
+            _seed_record(
+                decision_id="d2",
+                as_of_date="2026-01-15",
+                ticker="BBB.NS",
+                allocation=3000.0,
+                run_timestamp="2026-01-15T10:00:00Z",
+            ),
+        ]
+    )
+
+    provider = FakePriceProvider(
+        {
+            "AAA.NS": [("2026-01-15", 100.0), ("2026-01-31", 110.0)],
+            "BBB.NS": [("2026-01-15", 100.0), ("2026-01-31", 90.0)],
+            "NIFTYBEES.NS": [("2026-01-15", 200.0), ("2026-01-31", 202.0)],
+            "SPY": [("2026-01-15", 300.0), ("2026-01-31", 303.0)],
+            "ES3.SI": [("2026-01-15", 3.0), ("2026-01-31", 3.03)],
+        }
+    )
+
+    run_competition(
+        prospective_db_path=db_path,
+        output_root=tmp_path / "out",
+        monthly_contribution=5000.0,
+        price_provider=provider,
+        today=pd.Timestamp("2026-01-31").date(),
+    )
+
+    summary = json.loads((tmp_path / "out" / "competition_summary.json").read_text(encoding="utf-8"))
+    details = summary["piios_core_monthly_components"]["2026-01"]
+    by_ticker = {row["ticker"]: row for row in details}
+    assert by_ticker["AAA.NS"]["price_return"] == 0.1
+    assert by_ticker["BBB.NS"]["price_return"] == -0.1
+
+    snapshots = json.loads((tmp_path / "out" / "competition_monthly_snapshots.json").read_text(encoding="utf-8"))
+    core = [x for x in snapshots if x["strategy_id"] == "PIIOS_CORE" and x["as_of_date"].startswith("2026-01")][0]
+    expected_return = ((1000.0 / 4000.0) * 0.1) + ((3000.0 / 4000.0) * -0.1)
+    assert core["monthly_return"] == round(expected_return, 8)
 
 
 def test_default_registry_contains_required_contestants() -> None:
