@@ -60,6 +60,7 @@ class ProspectiveLedgerCaptureService:
             ticker = rec.ticker
             top_rank = top_rank_by_ticker.get(ticker, {})
             components = {c.name.lower(): c for c in rec.components}
+            diagnostics = rec.diagnostics or {}
 
             quality_score = _safe_float_component(components.get("quality"))
             growth_score = _safe_float_component(components.get("growth"))
@@ -83,7 +84,7 @@ class ProspectiveLedgerCaptureService:
             fundamental_snapshot = {
                 "components": [item.model_dump() for item in rec.components],
                 "evidence": [item.model_dump() for item in rec.evidence],
-                "diagnostics": rec.diagnostics or {},
+                "diagnostics": diagnostics,
             }
             factor_payload = {
                 "ticker": ticker,
@@ -137,7 +138,9 @@ class ProspectiveLedgerCaptureService:
                     market_provider=rec.market_data_provider,
                     fundamental_provider="yfinance",
                     market_source_retrieval_timestamp=rec.market_data_as_of,
-                    fundamental_source_retrieval_timestamp=None,
+                    fundamental_source_retrieval_timestamp=_safe_str(
+                        diagnostics.get("fundamental_source_retrieval_timestamp")
+                    ),
                     market_snapshot_reference=market_snapshot,
                     fundamental_snapshot_reference=fundamental_snapshot,
                     market_snapshot_hash=market_hash,
@@ -177,3 +180,10 @@ def _extract_evidence_coverage(top_rank: dict[str, Any], evidence: list[Any]) ->
         except ValueError:
             continue
     return None
+
+
+def _safe_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None

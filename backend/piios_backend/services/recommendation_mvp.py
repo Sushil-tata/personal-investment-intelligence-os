@@ -313,6 +313,7 @@ class RecommendationMVPService:
 					diagnostics={
 						"factor_score_trace": item.get("factor_score_trace", {}),
 						"review_metrics": item.get("review_metrics", {}),
+						"fundamental_source_retrieval_timestamp": (market.raw_metrics or {}).get("fundamentals_as_of"),
 						"relative_market_cap_bucket": self._relative_market_cap_bucket(str(item.get("market_cap_bucket") or "UNKNOWN")),
 						"market_cap": item.get("market_cap"),
 						"market_cap_percentile": item.get("market_cap_percentile"),

@@ -51,7 +51,10 @@ def _response(as_of_timestamp: str) -> PortfolioRecommendationResponse:
         conditions_to_change=[],
         components=components,
         evidence=evidence,
-        diagnostics={"trace": "ok"},
+        diagnostics={
+            "trace": "ok",
+            "fundamental_source_retrieval_timestamp": as_of_timestamp,
+        },
     )
     return PortfolioRecommendationResponse(
         recommendation_id="r1",
@@ -123,7 +126,7 @@ def test_immutable_append_and_later_decision_new_record(tmp_path: Path) -> None:
     with sqlite3.connect(db_path) as conn:
         count = conn.execute("SELECT COUNT(*) FROM prospective_decisions").fetchone()[0]
         rows = conn.execute(
-            "SELECT decision_id, strategy_id, engine_version, git_commit_sha, market_source_retrieval_timestamp, factor_payload_hash FROM prospective_decisions ORDER BY run_timestamp ASC"
+            "SELECT decision_id, strategy_id, engine_version, git_commit_sha, market_source_retrieval_timestamp, fundamental_source_retrieval_timestamp, factor_payload_hash FROM prospective_decisions ORDER BY run_timestamp ASC"
         ).fetchall()
 
     assert count == 2
@@ -131,5 +134,6 @@ def test_immutable_append_and_later_decision_new_record(tmp_path: Path) -> None:
     assert rows[0][2] == "WAVE_3_1_RECOMMENDATION_MVP"
     assert rows[0][3] == "abc123"
     assert rows[0][4] == "2026-08-12T10:00:00Z"
-    assert rows[0][5] is not None
+    assert rows[0][5] == "2026-08-12T10:00:00Z"
+    assert rows[0][6] is not None
     assert rows[0][0] != rows[1][0]
