@@ -349,6 +349,10 @@ def test_summary_marks_ph_ph_mh_rs_as_data_pending(tmp_path: Path) -> None:
 
     summary = json.loads((out / "competition_summary.json").read_text(encoding="utf-8"))
     assert summary["data_pending_strategies"] == {"PH_PH_MH_RS_V1": "OWN_HISTORY_PROFIT_SERIES_NOT_AVAILABLE"}
+    assert summary["sizing_note"] == (
+        "52W_HIGH_V1 uses equal-weight sizing because liquidity/volatility inputs are not available in the current "
+        "MarketPriceProvider interface; liquidity proxy in this version is minimum recent trading-day observations only."
+    )
 
 
 def test_52w_high_challenger_selects_near_high_name_without_lookahead(tmp_path: Path) -> None:

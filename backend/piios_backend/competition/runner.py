@@ -318,6 +318,7 @@ def run_competition(
                 "monthly_contribution": result.monthly_contribution,
                 "contestants": [item.strategy_id for item in registry.all_latest()],
                 "data_pending_strategies": DATA_PENDING_STRATEGIES,
+                "sizing_note": "52W_HIGH_V1 uses equal-weight sizing because liquidity/volatility inputs are not available in the current MarketPriceProvider interface; liquidity proxy in this version is minimum recent trading-day observations only.",
                 "ledger_timestamp_semantics": "APPLICATION_RETRIEVAL_TIMESTAMP",
                 "portfolio_execution_model": "MONTHLY_FULL_REBALANCE_TO_EVENT_ALLOCATIONS",
                 "current_rank_1": current_rank_1,
