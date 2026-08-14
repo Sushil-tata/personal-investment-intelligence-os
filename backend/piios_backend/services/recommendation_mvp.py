@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+import logging
 import math
 from pathlib import Path
 import re
 from statistics import mean
+import threading
+import time
 from typing import Literal
 from uuid import uuid4
 
@@ -26,6 +30,8 @@ from piios_backend.services.live_feeds import QuoteSnapshot, live_feeds
 
 
 DataMode = Literal["LIVE", "CACHED", "DEVELOPMENT_SEED", "UNAVAILABLE"]
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -234,9 +240,10 @@ class RecommendationMVPService:
 		else:
 			candidates, universe_summary, screening_summary, excluded = self._discover_candidates(market_filter)
 
+		market_results = self._resolve_markets_concurrently(candidates, mode_preference, request.base_currency)
+
 		analyses: list[dict[str, object]] = []
-		for candidate in candidates:
-			market = self._resolve_market(candidate, mode_preference, request.base_currency)
+		for candidate, market in zip(candidates, market_results):
 			current_value = sum(h.market_value for h in holdings if h.ticker.upper() == candidate.ticker.upper())
 			current_weight = 0.0 if total_before <= 0 else current_value / total_before
 			analyses.append(
@@ -1939,6 +1946,60 @@ class RecommendationMVPService:
 			mandate[mapping.get(k, k)] = v
 		return mandate
 
+	def _resolve_markets_concurrently(
+		self,
+		candidates: list[CandidateInstrument],
+		mode_preference: str,
+		base_currency: str,
+	) -> list[MarketSnapshot]:
+		# Per-candidate market resolution does up to three serial network calls each
+		# (history, fundamentals, fx). Fetching candidates concurrently avoids multiplying
+		# per-ticker network latency by the full universe size, mirroring the same
+		# ThreadPoolExecutor pattern already used in live_feeds.top_recommendations().
+		if not candidates:
+			return []
+		started = time.perf_counter()
+		max_workers = min(10, len(candidates))
+		logger.info(
+			"_resolve_markets_concurrently started candidates=%d max_workers=%d mode=%s base_currency=%s",
+			len(candidates),
+			max_workers,
+			mode_preference,
+			base_currency,
+		)
+		results: list[MarketSnapshot] = [None] * len(candidates)  # type: ignore[list-item]
+
+		def _resolve_one(candidate: CandidateInstrument) -> MarketSnapshot:
+			thread_name = threading.current_thread().name
+			logger.info("_resolve_markets_concurrently fetch_start ticker=%s thread=%s", candidate.ticker, thread_name)
+			snapshot = self._resolve_market(candidate, mode_preference, base_currency)
+			logger.info("_resolve_markets_concurrently fetch_done ticker=%s thread=%s", candidate.ticker, thread_name)
+			return snapshot
+
+		with ThreadPoolExecutor(max_workers=max_workers) as executor:
+			future_to_index = {
+				executor.submit(_resolve_one, candidate): idx
+				for idx, candidate in enumerate(candidates)
+			}
+			for future in as_completed(future_to_index):
+				idx = future_to_index[future]
+				try:
+					results[idx] = future.result()
+				except Exception:
+					# Preserve positional alignment with `candidates` even if one ticker's
+					# fetch unexpectedly raises; fall back to the same unavailable-snapshot
+					# path a live-fetch failure would already take.
+					results[idx] = self._unavailable_market_snapshot(candidates[idx], base_currency)
+
+		elapsed = time.perf_counter() - started
+		logger.info(
+			"_resolve_markets_concurrently completed candidates=%d max_workers=%d elapsed_seconds=%.3f",
+			len(candidates),
+			max_workers,
+			elapsed,
+		)
+		return results
+
 	def _resolve_market(self, candidate: CandidateInstrument, mode_preference: str, base_currency: str) -> MarketSnapshot:
 		ticker = candidate.ticker
 		cached = self._cache.get(ticker)
@@ -1967,6 +2028,10 @@ class RecommendationMVPService:
 				if seeded is not None:
 					return seeded
 
+		return self._unavailable_market_snapshot(candidate, base_currency)
+
+	def _unavailable_market_snapshot(self, candidate: CandidateInstrument, base_currency: str) -> MarketSnapshot:
+		ticker = candidate.ticker
 		fx_required = (candidate.trading_currency or base_currency).upper() != base_currency.upper()
 		return MarketSnapshot(
 			ticker=ticker,
