@@ -9,6 +9,7 @@ import json
 
 import pandas as pd
 
+from .challengers import DATA_PENDING_STRATEGIES, select_52w_high_allocations
 from .ledger_bridge import decisions_to_events, event_ledger_hash, load_core_decisions
 from .models import CompetitionResult, LeaderboardRow, MonthlySnapshot
 from .performance import (
@@ -160,8 +161,10 @@ def run_competition(
 
     monthly_core_returns: dict[str, float] = {}
     monthly_benchmark_returns: dict[str, dict[str, float]] = defaultdict(dict)
+    monthly_challenger_returns: dict[str, dict[str, float]] = defaultdict(dict)
     monthly_windows: dict[str, dict[str, str]] = {}
     monthly_core_components: dict[str, list[dict[str, object]]] = defaultdict(list)
+    monthly_challenger_components: dict[str, dict[str, list[dict[str, object]]]] = defaultdict(dict)
 
     for month in months:
         batch = [item for item in events_by_month[month] if hasattr(item, "payload")]
@@ -199,6 +202,18 @@ def run_competition(
 
         monthly_core_returns[month] = _weighted_event_return(price_provider, allocations, start_date, end_date)
 
+        challenger_allocations, challenger_components = select_52w_high_allocations(
+            price_provider,
+            as_of_date=start_date,
+        )
+        monthly_challenger_components[month]["52W_HIGH_V1"] = challenger_components
+        monthly_challenger_returns["52W_HIGH_V1"][month] = _weighted_event_return(
+            price_provider,
+            challenger_allocations,
+            start_date,
+            end_date,
+        )
+
         for strategy_id, ticker in benchmark_ticker.items():
             bench_ret = _price_return(price_provider, ticker, start_date, end_date)
             monthly_benchmark_returns[strategy_id][month] = 0.0 if bench_ret is None else bench_ret
@@ -216,6 +231,8 @@ def run_competition(
             contribution = equal_contribution_rule(strategy_id, monthly_contribution)
             if strategy_id == "PIIOS_CORE":
                 monthly_return = monthly_core_returns.get(month, 0.0)
+            elif strategy_id == "52W_HIGH_V1":
+                monthly_return = monthly_challenger_returns.get(strategy_id, {}).get(month, 0.0)
             else:
                 monthly_return = monthly_benchmark_returns.get(strategy_id, {}).get(month, 0.0)
 
@@ -300,12 +317,14 @@ def run_competition(
                 "end_month": result.end_month,
                 "monthly_contribution": result.monthly_contribution,
                 "contestants": [item.strategy_id for item in registry.all_latest()],
+                "data_pending_strategies": DATA_PENDING_STRATEGIES,
                 "ledger_timestamp_semantics": "APPLICATION_RETRIEVAL_TIMESTAMP",
                 "portfolio_execution_model": "MONTHLY_FULL_REBALANCE_TO_EVENT_ALLOCATIONS",
                 "current_rank_1": current_rank_1,
                 "investment_conclusion": investment_conclusion,
                 "contestant_data_sources": {
                     "PIIOS_CORE": "real weighted price return of held tickers via live_feeds.history(yfinance)",
+                    "52W_HIGH_V1": "real price return of monthly near-52-week-high basket selected from India universe via live_feeds.history(yfinance)",
                     "NIFTY50_V1": "real proxy price return via NIFTYBEES.NS from live_feeds.history(yfinance)",
                     "SP500_V1": "real proxy price return via SPY from live_feeds.history(yfinance)",
                     "STI_V1": "real proxy price return via ES3.SI from live_feeds.history(yfinance)",
@@ -313,6 +332,7 @@ def run_competition(
                 },
                 "monthly_windows": monthly_windows,
                 "piios_core_monthly_components": monthly_core_components,
+                "challenger_monthly_components": monthly_challenger_components,
                 "leaderboard_top": asdict(leaderboard[0]) if leaderboard else None,
             },
             indent=2,

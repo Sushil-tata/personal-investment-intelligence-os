@@ -50,6 +50,13 @@ def default_registry() -> StrategyRegistry:
             kind="CORE",
         ),
         StrategyDefinition(
+            strategy_id="52W_HIGH_V1",
+            version=1,
+            engine_version="PRICE_HIGH_SIMPLE",
+            description="Mechanical near-52-week-high challenger using only price-high proximity and basic investability filters.",
+            kind="CHALLENGER",
+        ),
+        StrategyDefinition(
             strategy_id="NIFTY50_V1",
             version=1,
             engine_version="INDEX_BENCHMARK",

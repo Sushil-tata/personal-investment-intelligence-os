@@ -173,7 +173,7 @@ def test_fair_capital_rules_and_benchmark_contestants(tmp_path: Path) -> None:
         price_provider=provider,
         today=pd.Timestamp("2026-03-05").date(),
     )
-    expected = {"PIIOS_CORE", "NIFTY50_V1", "SP500_V1", "STI_V1", "CASH_V1"}
+    expected = {"PIIOS_CORE", "52W_HIGH_V1", "NIFTY50_V1", "SP500_V1", "STI_V1", "CASH_V1"}
     got = {row.strategy_id for row in result.leaderboard}
     assert got == expected
 
@@ -322,4 +322,88 @@ def test_piios_core_weighted_real_return_matches_expected(tmp_path: Path) -> Non
 def test_default_registry_contains_required_contestants() -> None:
     registry = default_registry()
     ids = {item.strategy_id for item in registry.all_latest()}
-    assert ids == {"PIIOS_CORE", "NIFTY50_V1", "SP500_V1", "STI_V1", "CASH_V1"}
+    assert ids == {"PIIOS_CORE", "52W_HIGH_V1", "NIFTY50_V1", "SP500_V1", "STI_V1", "CASH_V1"}
+
+
+def test_summary_marks_ph_ph_mh_rs_as_data_pending(tmp_path: Path) -> None:
+    db_path = tmp_path / "prospective.db"
+    _seed_db(db_path)
+    out = tmp_path / "out"
+    provider = FakePriceProvider(
+        {
+            "AAA.NS": [("2026-01-15", 100.0), ("2026-01-31", 110.0)],
+            "BBB.NS": [("2026-02-15", 100.0), ("2026-02-28", 90.0)],
+            "ABB.NS": [("2025-01-01", 90.0), ("2026-01-15", 100.0), ("2026-01-31", 110.0)],
+            "NIFTYBEES.NS": [("2026-01-15", 200.0), ("2026-01-31", 202.0), ("2026-02-15", 202.0), ("2026-02-28", 204.0)],
+            "SPY": [("2026-01-15", 300.0), ("2026-01-31", 303.0), ("2026-02-15", 303.0), ("2026-02-28", 306.0)],
+            "ES3.SI": [("2026-01-15", 3.0), ("2026-01-31", 3.03), ("2026-02-15", 3.03), ("2026-02-28", 3.06)],
+        }
+    )
+    run_competition(
+        prospective_db_path=db_path,
+        output_root=out,
+        monthly_contribution=5000.0,
+        price_provider=provider,
+        today=pd.Timestamp("2026-03-05").date(),
+    )
+
+    summary = json.loads((out / "competition_summary.json").read_text(encoding="utf-8"))
+    assert summary["data_pending_strategies"] == {"PH_PH_MH_RS_V1": "OWN_HISTORY_PROFIT_SERIES_NOT_AVAILABLE"}
+
+
+def test_52w_high_challenger_selects_near_high_name_without_lookahead(tmp_path: Path) -> None:
+    db_path = tmp_path / "prospective.db"
+    store = ProspectiveLedgerStore(db_path)
+    store.init()
+    store.append(
+        [
+            _seed_record(
+                decision_id="d1",
+                as_of_date="2026-01-15",
+                ticker="AAA.NS",
+                allocation=1000.0,
+                run_timestamp="2026-01-15T10:00:00Z",
+            ),
+        ]
+    )
+
+    trading_days = pd.bdate_range("2025-01-01", "2026-01-31")
+    abb_rows: list[tuple[str, float]] = []
+    acc_rows: list[tuple[str, float]] = []
+    for idx, ts in enumerate(trading_days):
+        date_text = ts.date().isoformat()
+        abb_price = 100.0 + (idx * 0.15)
+        acc_price = 120.0 - (idx * 0.02)
+        if date_text == "2026-01-31":
+            abb_price = 150.0
+            acc_price = 110.0
+        abb_rows.append((date_text, round(abb_price, 6)))
+        acc_rows.append((date_text, round(acc_price, 6)))
+
+    provider = FakePriceProvider(
+        {
+            "AAA.NS": [("2026-01-15", 100.0), ("2026-01-31", 110.0)],
+            "ABB.NS": abb_rows,
+            "ACC.NS": acc_rows,
+            "NIFTYBEES.NS": [("2026-01-15", 200.0), ("2026-01-31", 202.0)],
+            "SPY": [("2026-01-15", 300.0), ("2026-01-31", 303.0)],
+            "ES3.SI": [("2026-01-15", 3.0), ("2026-01-31", 3.03)],
+        }
+    )
+
+    run_competition(
+        prospective_db_path=db_path,
+        output_root=tmp_path / "out",
+        monthly_contribution=5000.0,
+        price_provider=provider,
+        today=pd.Timestamp("2026-01-31").date(),
+    )
+
+    summary = json.loads((tmp_path / "out" / "competition_summary.json").read_text(encoding="utf-8"))
+    picks = summary["challenger_monthly_components"]["2026-01"]["52W_HIGH_V1"]
+    assert picks
+    assert picks[0]["ticker"] == "ABB.NS"
+
+    snapshots = json.loads((tmp_path / "out" / "competition_monthly_snapshots.json").read_text(encoding="utf-8"))
+    challenger = [x for x in snapshots if x["strategy_id"] == "52W_HIGH_V1" and x["as_of_date"].startswith("2026-01")][0]
+    assert challenger["monthly_return"] > 0.0
