@@ -7,7 +7,7 @@ import logging
 import math
 from pathlib import Path
 import re
-from statistics import mean
+from statistics import mean, median
 import threading
 import time
 from typing import Literal
@@ -196,6 +196,18 @@ _RELATIVE_SIZE_LABELS = {
 	"MICRO_OR_UNKNOWN": "RELATIVE_MICRO_OR_UNKNOWN",
 }
 
+_MARKET_BENCHMARKS = {
+	"India": ("NIFTY50", "NIFTYBEES.NS"),
+	"US": ("S&P 500", "SPY"),
+	"Singapore": ("STI", "ES3.SI"),
+}
+_RELATIVE_STRENGTH_WINDOWS = {
+	"3m": "return_3m_pct",
+	"6m": "return_6m_pct",
+	"12m": "return_12m_pct",
+}
+_PLAIN_OUTPERFORMANCE_THRESHOLD_PCT = 3.0
+
 
 def _now_iso() -> str:
 	return datetime.now(timezone.utc).isoformat()
@@ -240,7 +252,11 @@ class RecommendationMVPService:
 		else:
 			candidates, universe_summary, screening_summary, excluded = self._discover_candidates(market_filter)
 
-		market_results = self._resolve_markets_concurrently(candidates, mode_preference, request.base_currency)
+		market_results, benchmark_returns = self._resolve_request_market_data_concurrently(
+			candidates,
+			mode_preference,
+			request.base_currency,
+		)
 
 		analyses: list[dict[str, object]] = []
 		for candidate, market in zip(candidates, market_results):
@@ -256,6 +272,7 @@ class RecommendationMVPService:
 			)
 
 		factor_payload = self._compute_factor_payloads(analyses, holdings, mandate, request.base_currency)
+		self._attach_relative_strength_diagnostics(factor_payload, benchmark_returns)
 		sensitivity = self._build_sensitivity_from_payload(factor_payload, request.investable_amount)
 		fragility_by_ticker = self._build_fragility_diagnostics(factor_payload)
 
@@ -320,6 +337,7 @@ class RecommendationMVPService:
 					diagnostics={
 						"factor_score_trace": item.get("factor_score_trace", {}),
 						"review_metrics": item.get("review_metrics", {}),
+						"relative_strength": item.get("relative_strength", {}),
 						"fundamental_source_retrieval_timestamp": (market.raw_metrics or {}).get("fundamentals_as_of"),
 						"relative_market_cap_bucket": self._relative_market_cap_bucket(str(item.get("market_cap_bucket") or "UNKNOWN")),
 						"market_cap": item.get("market_cap"),
@@ -1237,6 +1255,7 @@ class RecommendationMVPService:
 			candidate: CandidateInstrument | None = None if item is None else item["candidate"]  # type: ignore[assignment]
 			market: MarketSnapshot | None = None if item is None else item["market"]  # type: ignore[assignment]
 			sector = None if market is None else (market.raw_metrics or {}).get("sector")
+			relative_strength = item.get("relative_strength") if item and isinstance(item.get("relative_strength"), dict) else {}
 			out.append(
 				{
 					"rank": idx,
@@ -1287,6 +1306,21 @@ class RecommendationMVPService:
 					"return_6m_pct_reason": self._review_metric_reason(item, "return_6m_pct") if item else "missing_item",
 					"return_12m_pct": self._review_metric_value(item, "return_12m_pct") if item else "UNAVAILABLE",
 					"return_12m_pct_reason": self._review_metric_reason(item, "return_12m_pct") if item else "missing_item",
+					"benchmark_name": relative_strength.get("benchmark_name"),
+					"benchmark_ticker": relative_strength.get("benchmark_ticker"),
+					"excess_return_vs_index_3m_pct": relative_strength.get("excess_return_vs_index_3m_pct"),
+					"excess_return_vs_index_3m_pct_reason": relative_strength.get("excess_return_vs_index_3m_pct_reason"),
+					"excess_return_vs_index_6m_pct": relative_strength.get("excess_return_vs_index_6m_pct"),
+					"excess_return_vs_index_6m_pct_reason": relative_strength.get("excess_return_vs_index_6m_pct_reason"),
+					"excess_return_vs_index_12m_pct": relative_strength.get("excess_return_vs_index_12m_pct"),
+					"excess_return_vs_index_12m_pct_reason": relative_strength.get("excess_return_vs_index_12m_pct_reason"),
+					"sector_relative_return_3m_pct": relative_strength.get("sector_relative_return_3m_pct"),
+					"sector_relative_return_3m_pct_reason": relative_strength.get("sector_relative_return_3m_pct_reason"),
+					"sector_relative_return_6m_pct": relative_strength.get("sector_relative_return_6m_pct"),
+					"sector_relative_return_6m_pct_reason": relative_strength.get("sector_relative_return_6m_pct_reason"),
+					"sector_relative_return_12m_pct": relative_strength.get("sector_relative_return_12m_pct"),
+					"sector_relative_return_12m_pct_reason": relative_strength.get("sector_relative_return_12m_pct_reason"),
+					"why_own_instead_of_benchmark": relative_strength.get("why_own_instead_of_benchmark"),
 					"volatility": self._review_metric_value(item, "volatility") if item else "UNAVAILABLE",
 					"volatility_reason": self._review_metric_reason(item, "volatility") if item else "missing_item",
 					"maximum_drawdown": self._review_metric_value(item, "maximum_drawdown") if item else "UNAVAILABLE",
@@ -1336,6 +1370,74 @@ class RecommendationMVPService:
 	def _fragility_value(self, item: dict[str, object], key: str) -> object:
 		fragility = item.get("fragility_diagnostics") if isinstance(item.get("fragility_diagnostics"), dict) else {}
 		return fragility.get(key)
+
+	def _attach_relative_strength_diagnostics(
+		self,
+		payload: list[dict[str, object]],
+		benchmark_returns: dict[str, dict[str, object]],
+	) -> None:
+		for item in payload:
+			candidate: CandidateInstrument = item["candidate"]  # type: ignore[assignment]
+			market: MarketSnapshot = item["market"]  # type: ignore[assignment]
+			sector = str((market.raw_metrics or {}).get("sector") or "").strip()
+			benchmark = benchmark_returns.get(candidate.market, {})
+			diagnostics: dict[str, object] = {
+				"benchmark_name": benchmark.get("benchmark_name"),
+				"benchmark_ticker": benchmark.get("benchmark_ticker"),
+			}
+
+			for window, metric in _RELATIVE_STRENGTH_WINDOWS.items():
+				stock_return = self._numeric_review_metric(item, metric)
+				benchmark_return = self._safe_float(benchmark.get(metric))
+				excess_key = f"excess_return_vs_index_{window}_pct"
+				if stock_return is None:
+					diagnostics[excess_key] = None
+					diagnostics[f"{excess_key}_reason"] = "stock_return_unavailable"
+				elif benchmark_return is None:
+					diagnostics[excess_key] = None
+					diagnostics[f"{excess_key}_reason"] = str(benchmark.get("unavailable_reason") or "benchmark_return_unavailable")
+				else:
+					diagnostics[excess_key] = round(stock_return - benchmark_return, 4)
+					diagnostics[f"{excess_key}_reason"] = None
+
+				peer_values: list[float] = []
+				if sector:
+					for peer in payload:
+						if peer is item:
+							continue
+						peer_market: MarketSnapshot = peer["market"]  # type: ignore[assignment]
+						peer_sector = str((peer_market.raw_metrics or {}).get("sector") or "").strip()
+						peer_value = self._numeric_review_metric(peer, metric)
+						if peer_sector == sector and peer_value is not None:
+							peer_values.append(peer_value)
+
+				sector_key = f"sector_relative_return_{window}_pct"
+				if stock_return is None:
+					diagnostics[sector_key] = None
+					diagnostics[f"{sector_key}_reason"] = "stock_return_unavailable"
+				elif not sector:
+					diagnostics[sector_key] = None
+					diagnostics[f"{sector_key}_reason"] = "sector_unavailable"
+				elif len(peer_values) < 3:
+					diagnostics[sector_key] = None
+					diagnostics[f"{sector_key}_reason"] = f"fewer_than_3_same_sector_peers:{len(peer_values)}"
+				else:
+					diagnostics[sector_key] = round(stock_return - median(peer_values), 4)
+					diagnostics[f"{sector_key}_reason"] = None
+
+			why_own = None
+			for window in ("6m", "12m", "3m"):
+				excess = diagnostics.get(f"excess_return_vs_index_{window}_pct")
+				if isinstance(excess, (int, float)) and float(excess) >= _PLAIN_OUTPERFORMANCE_THRESHOLD_PCT:
+					benchmark_name = str(diagnostics.get("benchmark_name") or "the benchmark")
+					why_own = f"outperforming {benchmark_name} by {float(excess):.1f}% over {window}"
+					break
+			diagnostics["why_own_instead_of_benchmark"] = why_own
+			item["relative_strength"] = diagnostics
+
+	def _numeric_review_metric(self, item: dict[str, object], key: str) -> float | None:
+		value = self._review_metric_value(item, key)
+		return self._safe_float(value)
 
 	def _build_fragility_diagnostics(self, payload: list[dict[str, object]]) -> dict[str, dict[str, object]]:
 		weights = {
@@ -1999,6 +2101,93 @@ class RecommendationMVPService:
 			elapsed,
 		)
 		return results
+
+	def _resolve_request_market_data_concurrently(
+		self,
+		candidates: list[CandidateInstrument],
+		mode_preference: str,
+		base_currency: str,
+	) -> tuple[list[MarketSnapshot], dict[str, dict[str, object]]]:
+		markets = sorted({candidate.market for candidate in candidates if candidate.market in _MARKET_BENCHMARKS})
+		with ThreadPoolExecutor(max_workers=2) as executor:
+			market_future = executor.submit(
+				self._resolve_markets_concurrently,
+				candidates,
+				mode_preference,
+				base_currency,
+			)
+			benchmark_future = executor.submit(
+				self._fetch_benchmark_returns_concurrently,
+				markets,
+				mode_preference,
+			)
+			return market_future.result(), benchmark_future.result()
+
+	def _fetch_benchmark_returns_concurrently(
+		self,
+		markets: list[str],
+		mode_preference: str,
+	) -> dict[str, dict[str, object]]:
+		if mode_preference == "development_seed" or not markets:
+			return {}
+
+		results: dict[str, dict[str, object]] = {}
+		with ThreadPoolExecutor(max_workers=min(3, len(markets))) as executor:
+			future_to_market = {
+				executor.submit(self._fetch_benchmark_returns, market): market
+				for market in markets
+			}
+			for future in as_completed(future_to_market):
+				market = future_to_market[future]
+				try:
+					results[market] = future.result()
+				except Exception as exc:
+					benchmark_name, ticker = _MARKET_BENCHMARKS[market]
+					results[market] = {
+						"benchmark_name": benchmark_name,
+						"benchmark_ticker": ticker,
+						"return_3m_pct": None,
+						"return_6m_pct": None,
+						"return_12m_pct": None,
+						"unavailable_reason": f"benchmark_fetch_failed:{type(exc).__name__}",
+					}
+		return results
+
+	def _fetch_benchmark_returns(self, market: str) -> dict[str, object]:
+		benchmark_name, ticker = _MARKET_BENCHMARKS[market]
+		history = live_feeds.history(ticker, period="1y", interval="1d")
+		if history.frame is None or history.frame.empty:
+			return {
+				"benchmark_name": benchmark_name,
+				"benchmark_ticker": ticker,
+				"return_3m_pct": None,
+				"return_6m_pct": None,
+				"return_12m_pct": None,
+				"unavailable_reason": "benchmark_history_unavailable",
+			}
+
+		frame = history.frame
+		price_col = "Adj Close" if "Adj Close" in frame.columns else "Close"
+		series = frame[price_col].dropna()
+		observations = len(series)
+
+		def _window_return(lookback: int) -> float | None:
+			if observations < 2:
+				return None
+			idx = max(0, observations - 1 - min(lookback, observations - 1))
+			start = float(series.iloc[idx])
+			if start == 0:
+				return None
+			return ((float(series.iloc[-1]) / start) - 1.0) * 100.0
+
+		return {
+			"benchmark_name": benchmark_name,
+			"benchmark_ticker": ticker,
+			"return_3m_pct": _window_return(63),
+			"return_6m_pct": _window_return(126),
+			"return_12m_pct": _window_return(252),
+			"unavailable_reason": None,
+		}
 
 	def _resolve_market(self, candidate: CandidateInstrument, mode_preference: str, base_currency: str) -> MarketSnapshot:
 		ticker = candidate.ticker
