@@ -294,6 +294,17 @@ def test_wave3_route_generate_rejects_development_seed() -> None:
     assert response.status_code == 422
 
 
+def test_wave3_route_generate_requires_explicit_live_mode() -> None:
+    client = _recommendations_test_client()
+    for payload in (
+        {"investable_amount": 5000, "use_demo_portfolio": False},
+        {"investable_amount": 5000, "market_data_mode": "auto", "use_demo_portfolio": False},
+    ):
+        response = client.post("/api/v1/recommendations/generate", json=payload)
+        assert response.status_code == 422
+        assert "requires explicit market_data_mode='live'" in response.json()["detail"]
+
+
 def test_wave3_route_generate_missing_portfolio() -> None:
     client = _recommendations_test_client()
     response = client.post(

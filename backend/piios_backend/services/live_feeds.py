@@ -2,19 +2,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import math
 from statistics import mean
 
 import pandas as pd
 import yfinance as yf
 
+from piios_backend.core.universe_loader import load_india_universe
 from piios_backend.core.config import settings
 from piios_backend.schemas.enums import RecommendationStatus
 from piios_backend.schemas.operations import ResearchDocumentResponse, ResearchFeedResponse
 from piios_backend.schemas.recommendation import Recommendation, TacticalSignal, TopRecommendation
 
 
-TOP_RECOMMENDATION_UNIVERSE = [
+US_TOP_RECOMMENDATION_UNIVERSE = [
     "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "AVGO", "TSLA", "BRK-B", "JPM",
     "V", "MA", "LLY", "UNH", "XOM", "WMT", "JNJ", "PG", "HD", "MRK",
     "COST", "ABBV", "KO", "BAC", "PEP", "AMD", "ADBE", "CRM", "NFLX", "CVX",
@@ -23,6 +25,18 @@ TOP_RECOMMENDATION_UNIVERSE = [
     "RTX", "SPGI", "BKNG", "NOW", "BLK", "PGR", "LOW", "ISRG", "MU", "UBER",
     "PANW", "ANET", "ETN", "DE", "LRCX", "SYK", "ADP", "TJX", "GILD", "VRTX",
 ]
+
+
+def _top_recommendation_universe(market: str | None = None) -> list[str]:
+    selected_market = (market or "US").strip().upper()
+    if selected_market == "INDIA":
+        try:
+            # Keep the live recommendation screen responsive; the full India universe is much larger
+            # than the US list and can exceed the page's request budget when fetched live.
+            return load_india_universe()[:80]
+        except FileNotFoundError:
+            return []
+    return US_TOP_RECOMMENDATION_UNIVERSE
 
 CANONICAL_SECTORS = [
     "AI SaaS",
@@ -265,7 +279,7 @@ class LiveFeedService:
             return HistorySnapshot(
                 ticker=ticker,
                 provider="yfinance",
-                mode="CACHED",
+                mode="UNAVAILABLE_COOLDOWN",
                 as_of=None,
                 is_stale=True,
                 fallback_reason="cooldown_active_after_previous_failure",
@@ -328,7 +342,7 @@ class LiveFeedService:
             return FundamentalsSnapshot(
                 ticker=ticker,
                 provider="yfinance",
-                mode="CACHED",
+                mode="UNAVAILABLE_COOLDOWN",
                 as_of=None,
                 is_stale=True,
                 fallback_reason="cooldown_active_after_previous_failure",
@@ -403,7 +417,7 @@ class LiveFeedService:
             return FxRateSnapshot(
                 pair=pair,
                 provider="yfinance",
-                mode="CACHED",
+                mode="UNAVAILABLE_COOLDOWN",
                 as_of=None,
                 is_stale=True,
                 fallback_reason="cooldown_active_after_previous_failure",
@@ -588,17 +602,18 @@ class LiveFeedService:
             signal.target = str(round(snapshot.close * 1.06, 2))
         return signals
 
-    def top_recommendations(self, limit: int = 50, sector: str | None = None) -> list[TopRecommendation]:
+    def top_recommendations(self, limit: int = 50, sector: str | None = None, market: str | None = None) -> list[TopRecommendation]:
         clamped_limit = max(1, min(100, limit))
         rows: list[TopRecommendation] = []
         sector_filter = sector.strip() if sector else None
+        universe = _top_recommendation_universe(market)
 
-        if self._can_attempt():
-            for ticker in TOP_RECOMMENDATION_UNIVERSE:
+        if self._can_attempt() and universe:
+            def _fetch_ticker(ticker: str) -> TopRecommendation | None:
                 try:
                     history = yf.Ticker(ticker).history(period="7d", interval="1d", auto_adjust=False, timeout=6)
                     if history is None or history.empty or len(history) < 3:
-                        continue
+                        return None
 
                     close_latest = float(history["Close"].iloc[-1])
                     close_prev = float(history["Close"].iloc[-2])
@@ -615,20 +630,26 @@ class LiveFeedService:
                     score = 50.0 + (daily_pct * 8.0) + (weekly_pct * 2.0) + ((volume_ratio - 1.0) * 5.0)
                     score = max(0.0, min(100.0, score))
 
-                    rows.append(
-                        TopRecommendation(
-                            ticker=ticker,
-                            sector=self.sector_for_ticker(ticker),
-                            score=round(score, 2),
-                            daily_pct=round(daily_pct, 2),
-                            weekly_pct=round(weekly_pct, 2),
-                            close=round(close_latest, 2),
-                            volume_ratio=round(volume_ratio, 2),
-                            recommended_action=_advisory_action(score, daily_pct, weekly_pct, volume_ratio),
-                        )
+                    return TopRecommendation(
+                        ticker=ticker,
+                        sector=self.sector_for_ticker(ticker),
+                        score=round(score, 2),
+                        daily_pct=round(daily_pct, 2),
+                        weekly_pct=round(weekly_pct, 2),
+                        close=round(close_latest, 2),
+                        volume_ratio=round(volume_ratio, 2),
+                        recommended_action=_advisory_action(score, daily_pct, weekly_pct, volume_ratio),
                     )
                 except Exception:
-                    continue
+                    return None
+
+            max_workers = min(10, len(universe))
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = [executor.submit(_fetch_ticker, ticker) for ticker in universe]
+                for future in as_completed(futures):
+                    row = future.result()
+                    if row is not None:
+                        rows.append(row)
 
         if not rows and self._allow_synthetic_fallbacks():
             fallback_tickers = [

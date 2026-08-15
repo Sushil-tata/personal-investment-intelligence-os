@@ -5,9 +5,14 @@ import json
 from pathlib import Path
 
 from piios_backend.competition.runner import run_competition
+from piios_backend.services.recommendation_mvp import assert_live_market_data_mode
+
+
+MARKET_DATA_MODE = "live"
 
 
 def main() -> None:
+    assert_live_market_data_mode(MARKET_DATA_MODE, caller="run_stage_c_competition")
     parser = argparse.ArgumentParser(description="Run Stage C prospective competition framework")
     parser.add_argument(
         "--prospective-db",

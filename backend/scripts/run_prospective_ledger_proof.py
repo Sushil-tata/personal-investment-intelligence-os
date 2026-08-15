@@ -8,7 +8,7 @@ from typing import Any
 
 from piios_backend.prospective_ledger import ProspectiveLedgerCaptureService, ProspectiveLedgerStore
 from piios_backend.schemas.recommendation import RecommendationGenerateRequest
-from piios_backend.services.recommendation_mvp import RecommendationMVPService
+from piios_backend.services.recommendation_mvp import RecommendationMVPService, assert_live_market_data_mode
 
 
 def _git_sha(repo_root: Path) -> str:
@@ -61,15 +61,15 @@ def main() -> None:
     output_root.mkdir(parents=True, exist_ok=True)
     db_path = output_root / "prospective_ledger.db"
 
-    service = RecommendationMVPService()
-    response = service.generate(
-        RecommendationGenerateRequest(
-            investable_amount=5000.0,
-            market_data_mode="live",
-            use_demo_portfolio=True,
-            eligible_markets=["India", "US", "Singapore"],
-        )
+    request = RecommendationGenerateRequest(
+        investable_amount=5000.0,
+        market_data_mode="live",
+        use_demo_portfolio=True,
+        eligible_markets=["India", "US", "Singapore"],
     )
+    assert_live_market_data_mode(request.market_data_mode, caller="run_prospective_ledger_proof")
+    service = RecommendationMVPService()
+    response = service.generate(request)
 
     capture = ProspectiveLedgerCaptureService(ProspectiveLedgerStore(db_path=db_path))
     repo_root = Path(__file__).resolve().parents[2]

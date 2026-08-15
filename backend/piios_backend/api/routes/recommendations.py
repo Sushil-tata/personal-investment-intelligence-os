@@ -14,7 +14,7 @@ from piios_backend.schemas.recommendation import (
 from piios_backend.services.csv_io import from_csv, to_csv
 from piios_backend.services.in_memory_store import store
 from piios_backend.services.live_feeds import live_feeds
-from piios_backend.services.recommendation_mvp import recommendation_mvp_service
+from piios_backend.services.recommendation_mvp import assert_live_market_data_mode, recommendation_mvp_service
 
 
 router = APIRouter(prefix="/recommendations", tags=["recommendations"])
@@ -48,8 +48,9 @@ def recommendation_queue() -> RecommendationQueueResponse:
 def top_recommendations(
     limit: int = Query(default=50, ge=1, le=100),
     sector: str | None = Query(default=None),
+    market: str | None = Query(default=None),
 ) -> list[TopRecommendation]:
-    return live_feeds.top_recommendations(limit=limit, sector=sector)
+    return live_feeds.top_recommendations(limit=limit, sector=sector, market=market)
 
 
 @router.post("/generate", response_model=PortfolioRecommendationResponse)
@@ -59,6 +60,7 @@ def generate_recommendation(request: RecommendationGenerateRequest) -> Portfolio
     if (request.market_data_mode or "").strip().lower() == "development_seed":
         raise HTTPException(status_code=422, detail="development_seed mode is only supported via /recommendations/demo")
     try:
+        assert_live_market_data_mode(request.market_data_mode, caller="POST /recommendations/generate")
         return recommendation_mvp_service.generate(request)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

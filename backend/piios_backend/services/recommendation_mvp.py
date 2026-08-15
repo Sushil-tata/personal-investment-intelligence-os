@@ -34,6 +34,13 @@ DataMode = Literal["LIVE", "CACHED", "DEVELOPMENT_SEED", "UNAVAILABLE"]
 logger = logging.getLogger(__name__)
 
 
+def assert_live_market_data_mode(market_data_mode: str | None, *, caller: str) -> None:
+	mode = (market_data_mode or "auto").strip().lower()
+	if mode != "live":
+		raise ValueError(f"{caller} requires explicit market_data_mode='live'; received {mode!r}")
+	logger.info("%s confirmed market_data_mode='live'", caller)
+
+
 @dataclass(frozen=True)
 class CandidateInstrument:
 	ticker: str

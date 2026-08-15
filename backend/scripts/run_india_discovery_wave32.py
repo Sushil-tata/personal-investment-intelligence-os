@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from piios_backend.schemas.recommendation import RecommendationGenerateRequest
-from piios_backend.services.recommendation_mvp import RecommendationMVPService
+from piios_backend.services.recommendation_mvp import RecommendationMVPService, assert_live_market_data_mode
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT_JSON = ROOT / "runtime" / "wave32_india_discovery.json"
@@ -55,6 +55,7 @@ def main() -> None:
         eligible_markets=["India"],
         base_currency="USD",
     )
+    assert_live_market_data_mode(req.market_data_mode, caller="run_india_discovery_wave32")
     result = svc.generate(req)
 
     top_ranked = [r for r in result.top_ranked_candidates if r.get("market") == "India"]
