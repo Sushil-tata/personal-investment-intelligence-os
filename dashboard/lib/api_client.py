@@ -271,10 +271,12 @@ def get_recommendation_queue() -> ApiResult:
     return _map(get_json("/recommendations/queue"), lambda d: [_recommendation(r) for r in d["items"]])
 
 
-def get_top_recommendations(limit: int = 50, sector: str | None = None) -> ApiResult:
+def get_top_recommendations(limit: int = 50, sector: str | None = None, market: str | None = None) -> ApiResult:
     params = {"limit": limit}
     if sector:
         params["sector"] = sector
+    if market:
+        params["market"] = market
     return _map(get_json("/recommendations/top", params=params), lambda d: [_top_recommendation(r) for r in d])
 
 

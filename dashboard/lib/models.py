@@ -255,6 +255,7 @@ class CrossMarketCandidate:
     top_positive_contributors: list[dict] = field(default_factory=list)
     top_negative_contributors: list[dict] = field(default_factory=list)
     metric_evidence: list[dict] = field(default_factory=list)
+    sector: str | None = None
 
 
 @dataclass

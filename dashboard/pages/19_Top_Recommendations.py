@@ -1,114 +1,91 @@
 import pandas as pd
 import streamlit as st
 
-from lib.api_client import get
+from lib import api_client as api
 
-
-SECTOR_FALLBACKS = {
-    "AAPL": "Tech",
-    "MSFT": "AI SaaS",
-    "NVDA": "Data Centre",
-    "AMZN": "Consumption",
-    "GOOGL": "Tech",
-    "META": "Tech",
-    "AVGO": "Data Centre",
-    "TSLA": "Mobility",
-    "BRK-B": "Consumption",
-    "JPM": "Tech",
-    "V": "Tech",
-    "MA": "Tech",
-    "LLY": "Consumption",
-    "UNH": "Consumption",
-    "XOM": "Petro",
-    "WMT": "Consumption",
-    "JNJ": "Consumption",
-    "PG": "Consumption",
-    "HD": "Consumption",
-    "MRK": "Consumption",
-    "COST": "Consumption",
-    "ABBV": "Consumption",
-    "KO": "Consumption",
-    "BAC": "Tech",
-    "PEP": "Consumption",
-    "AMD": "Data Centre",
-    "ADBE": "AI SaaS",
-    "CRM": "AI SaaS",
-    "NFLX": "Tech",
-    "CVX": "Petro",
-    "ORCL": "AI SaaS",
-    "TMO": "Consumption",
-    "ACN": "AI SaaS",
-    "MCD": "Consumption",
-    "DHR": "Consumption",
-    "ABT": "Consumption",
-    "LIN": "Agri",
-    "CSCO": "Tech",
-    "WFC": "Tech",
-    "INTU": "AI SaaS",
-    "CMCSA": "Consumption",
-    "QCOM": "Tech",
-    "TXN": "Data Centre",
-    "PM": "Consumption",
-    "IBM": "Tech",
-    "GE": "Mobility",
-    "INTC": "Data Centre",
-    "CAT": "Agri",
-    "GS": "Tech",
-    "AMAT": "Data Centre",
-    "RTX": "Mobility",
-    "SPGI": "Tech",
-    "BKNG": "Consumption",
-    "NOW": "AI SaaS",
-    "BLK": "Tech",
-    "PGR": "Consumption",
-    "LOW": "Consumption",
-    "ISRG": "Mobility",
-    "MU": "Data Centre",
-    "UBER": "Mobility",
-    "PANW": "AI SaaS",
-    "ANET": "Data Centre",
-    "ETN": "Mobility",
-    "DE": "Agri",
-    "LRCX": "Data Centre",
-    "SYK": "Consumption",
-    "ADP": "AI SaaS",
-    "TJX": "Consumption",
-    "GILD": "Consumption",
-    "VRTX": "Consumption",
-}
-
-
-def sector_for_ticker(ticker: str) -> str:
-    return SECTOR_FALLBACKS.get(ticker, "Diversified")
+CACHE_TTL_SECONDS = 600  # 10 minutes: avoids re-running the live engine on every widget interaction.
 
 st.title("Top Recommendations")
-st.caption("Live ranked recommendations from market feed, advisory-only")
+st.caption("Live ranked recommendations from the PIIOS discovery engine (real quality/growth/valuation/momentum/risk scoring), advisory-only.")
 
+
+@st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner="Running PIIOS discovery engine on live market data...")
+def _load_top_ranked(market: str) -> api.ApiResult:
+    return api.generate_investment_recommendation(
+        investable_amount=10000.0,
+        market_data_mode="live",
+        use_demo_portfolio=False,
+        base_currency="USD",
+        eligible_markets=[market],
+    )
+
+
+market = st.selectbox("Market", ["US", "India"], index=0)
 limit = st.slider("Rows", min_value=10, max_value=100, value=50, step=5)
-all_rows = get("/recommendations/top?limit=100")
-sector_options = ["All"] + sorted({row.get("sector") or sector_for_ticker(row.get("ticker", "")) for row in all_rows})
+
+result = _load_top_ranked(market)
+if not result.ok:
+    st.error(result.error or "Unable to load recommendations.")
+    st.stop()
+
+data = result.data
+all_candidates = data.top_ranked_candidates or []
+if not all_candidates:
+    st.info("No recommendations available. This can happen if live market data was unavailable for this market's universe.")
+    st.stop()
+
+st.caption(
+    f"As of {data.as_of_timestamp} · data mode {data.market_data_mode} · provider {data.market_data_provider} "
+    f"· input freshness {data.input_freshness}"
+)
+if data.market_data_mode and data.market_data_mode.upper() == "DEVELOPMENT_SEED":
+    st.warning("This run used seeded/synthetic data, not live market data — treat scores as non-authoritative.")
+
+sector_options = ["All"] + sorted({c.sector for c in all_candidates if c.sector})
 sector = st.selectbox("Sector", sector_options, index=0)
 
-query = f"/recommendations/top?limit={limit}"
+filtered = all_candidates
 if sector != "All":
-    query += f"&sector={sector}"
+    filtered = [c for c in filtered if c.sector == sector]
 
-payload = get(query)
+rows = filtered[:limit]
 
-if not payload:
-    st.info("No recommendations available.")
+if not rows:
+    st.info("No recommendations available for the selected sector.")
 else:
-    df = pd.DataFrame(payload)
-    if "sector" not in df.columns:
-        df["sector"] = df["ticker"].map(sector_for_ticker)
-    summary = df["recommended_action"].value_counts().to_dict()
+    summary = {}
+    for c in rows:
+        summary[c.action] = summary.get(c.action, 0) + 1
     cols = st.columns(4)
-    cols[0].metric("Buy / accumulate", int(sum(count for action, count in summary.items() if "buy" in action.lower() or "accumulate" in action.lower())))
-    cols[1].metric("Hold", int(sum(count for action, count in summary.items() if "hold" in action.lower())))
-    cols[2].metric("Reduce / sell", int(sum(count for action, count in summary.items() if "sell" in action.lower() or "reduce" in action.lower())))
-    cols[3].metric("Rows", len(df))
+    cols[0].metric("Buy / Add", sum(count for action, count in summary.items() if action in {"BUY", "ADD"}))
+    cols[1].metric("Hold / Research", sum(count for action, count in summary.items() if action in {"HOLD", "RESEARCH"}))
+    cols[2].metric("Reduce / Avoid", sum(count for action, count in summary.items() if action in {"REDUCE", "AVOID"}))
+    cols[3].metric("Rows", len(rows))
 
-    st.caption("Sector is shown as the second column in the table below.")
-    display_df = df[[col for col in ["ticker", "sector", "score", "recommended_action", "daily_pct", "weekly_pct", "close", "volume_ratio"] if col in df.columns]].copy()
-    st.dataframe(display_df, use_container_width=True)
-    st.bar_chart(df.set_index("ticker")["score"])
+    st.caption("Scores are the real PIIOS discovery engine factor scores (0-100), not a hardcoded or placeholder ranking.")
+    table = pd.DataFrame(
+        [
+            {
+                "Rank": c.rank,
+                "Ticker": c.ticker,
+                "Company": c.company,
+                "Sector": c.sector or "Unknown",
+                "Action": c.action,
+                "Combined Score": c.combined_recommendation_score,
+                "Quality": c.quality,
+                "Growth": c.growth,
+                "Valuation": c.valuation,
+                "Momentum": c.momentum,
+                "Risk": c.risk,
+                "Confidence": c.confidence,
+                "Price": c.current_price,
+                "Currency": c.trading_currency,
+            }
+            for c in rows
+        ]
+    )
+    st.dataframe(table, use_container_width=True, hide_index=True)
+    if table["Combined Score"].notna().any():
+        st.bar_chart(table.set_index("Ticker")["Combined Score"])
+
+st.warning("Advisory-only. No automatic trading, no broker integration, and human approval required.")
