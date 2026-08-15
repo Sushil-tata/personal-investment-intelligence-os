@@ -15,11 +15,24 @@ from piios_backend.prospective_ledger.store import ProspectiveLedgerStore
 
 
 class FakePriceProvider:
-    def __init__(self, series_by_ticker: dict[str, list[tuple[str, float]]]) -> None:
+    def __init__(
+        self,
+        series_by_ticker: dict[str, list[tuple[str, float]]],
+        volume_by_ticker: dict[str, list[tuple[str, float]]] | None = None,
+    ) -> None:
         self._series_by_ticker = series_by_ticker
+        self._volume_by_ticker = volume_by_ticker or {}
 
     def close_series(self, ticker: str) -> pd.Series:
         rows = self._series_by_ticker.get(ticker, [])
+        if not rows:
+            return pd.Series(dtype=float)
+        idx = pd.to_datetime([d for d, _ in rows]).normalize()
+        values = [float(v) for _, v in rows]
+        return pd.Series(values, index=idx).sort_index()
+
+    def volume_series(self, ticker: str) -> pd.Series:
+        rows = self._volume_by_ticker.get(ticker, [])
         if not rows:
             return pd.Series(dtype=float)
         idx = pd.to_datetime([d for d, _ in rows]).normalize()
@@ -96,9 +109,9 @@ def _seed_db(path: Path) -> None:
 
 def test_registry_immutable_versioning() -> None:
     registry = StrategyRegistry()
-    registry.register(StrategyDefinition("PIIOS_CORE", 1, "v1", "core", "CORE"))
+    registry.register(StrategyDefinition("PIIOS_CORE_V1", 1, "v1", "core", "CORE"))
     try:
-        registry.register(StrategyDefinition("PIIOS_CORE", 1, "v1b", "core", "CORE"))
+        registry.register(StrategyDefinition("PIIOS_CORE_V1", 1, "v1b", "core", "CORE"))
         assert False, "expected immutable version violation"
     except ValueError:
         pass
@@ -173,7 +186,7 @@ def test_fair_capital_rules_and_benchmark_contestants(tmp_path: Path) -> None:
         price_provider=provider,
         today=pd.Timestamp("2026-03-05").date(),
     )
-    expected = {"PIIOS_CORE", "52W_HIGH_V1", "NIFTY50_V1", "SP500_V1", "STI_V1", "CASH_V1"}
+    expected = {"PIIOS_CORE_V1", "52W_HIGH_V1", "NIFTY50_V1", "NIFTY500_V1", "SP500_V1", "STI_V1", "CASH_V1"}
     got = {row.strategy_id for row in result.leaderboard}
     assert got == expected
 
@@ -225,8 +238,8 @@ def test_no_lookahead_for_earlier_months(tmp_path: Path) -> None:
         today=pd.Timestamp("2026-03-31").date(),
     )
 
-    base_month = [s for s in base.snapshots if s.as_of_date.startswith("2026-01") and s.strategy_id == "PIIOS_CORE"][0]
-    changed_month = [s for s in changed.snapshots if s.as_of_date.startswith("2026-01") and s.strategy_id == "PIIOS_CORE"][0]
+    base_month = [s for s in base.snapshots if s.as_of_date.startswith("2026-01") and s.strategy_id == "PIIOS_CORE_V1"][0]
+    changed_month = [s for s in changed.snapshots if s.as_of_date.startswith("2026-01") and s.strategy_id == "PIIOS_CORE_V1"][0]
     assert base_month.nav_after_return == changed_month.nav_after_return
 
 
@@ -314,7 +327,7 @@ def test_piios_core_weighted_real_return_matches_expected(tmp_path: Path) -> Non
     assert by_ticker["BBB.NS"]["price_return"] == -0.1
 
     snapshots = json.loads((tmp_path / "out" / "competition_monthly_snapshots.json").read_text(encoding="utf-8"))
-    core = [x for x in snapshots if x["strategy_id"] == "PIIOS_CORE" and x["as_of_date"].startswith("2026-01")][0]
+    core = [x for x in snapshots if x["strategy_id"] == "PIIOS_CORE_V1" and x["as_of_date"].startswith("2026-01")][0]
     expected_return = ((1000.0 / 4000.0) * 0.1) + ((3000.0 / 4000.0) * -0.1)
     assert core["monthly_return"] == round(expected_return, 8)
 
@@ -322,7 +335,7 @@ def test_piios_core_weighted_real_return_matches_expected(tmp_path: Path) -> Non
 def test_default_registry_contains_required_contestants() -> None:
     registry = default_registry()
     ids = {item.strategy_id for item in registry.all_latest()}
-    assert ids == {"PIIOS_CORE", "52W_HIGH_V1", "NIFTY50_V1", "SP500_V1", "STI_V1", "CASH_V1"}
+    assert ids == {"PIIOS_CORE_V1", "52W_HIGH_V1", "NIFTY50_V1", "NIFTY500_V1", "SP500_V1", "STI_V1", "CASH_V1"}
 
 
 def test_summary_marks_ph_ph_mh_rs_as_data_pending(tmp_path: Path) -> None:
@@ -348,7 +361,13 @@ def test_summary_marks_ph_ph_mh_rs_as_data_pending(tmp_path: Path) -> None:
     )
 
     summary = json.loads((out / "competition_summary.json").read_text(encoding="utf-8"))
-    assert summary["data_pending_strategies"] == {"PH_PH_MH_RS_V1": "OWN_HISTORY_PROFIT_SERIES_NOT_AVAILABLE"}
+    assert summary["data_pending_strategies"] == {
+        "PH_PH_MH_RS_V1": (
+            "REAL_YFINANCE_STATEMENT_PROFIT_EXISTS_BUT_COMPLETE_PIT_PUBLICATION_DATES_"
+            "UNIVERSE_COVERAGE_AND_RESTATEMENT_VERSIONS_ARE_UNAVAILABLE;CURRENT_INFO_"
+            "FIELDS_WOULD_INTRODUCE_LOOKAHEAD"
+        )
+    }
     assert summary["sizing_note"] == (
         "52W_HIGH_V1 uses equal-weight sizing because liquidity/volatility inputs are not available in the current "
         "MarketPriceProvider interface; liquidity proxy in this version is minimum recent trading-day observations only."
@@ -411,3 +430,52 @@ def test_52w_high_challenger_selects_near_high_name_without_lookahead(tmp_path: 
     snapshots = json.loads((tmp_path / "out" / "competition_monthly_snapshots.json").read_text(encoding="utf-8"))
     challenger = [x for x in snapshots if x["strategy_id"] == "52W_HIGH_V1" and x["as_of_date"].startswith("2026-01")][0]
     assert challenger["monthly_return"] > 0.0
+
+
+def test_nifty500_index_contestant_and_execution_proxy_are_reported_separately(tmp_path: Path) -> None:
+    db_path = tmp_path / "prospective.db"
+    _seed_db(db_path)
+    dates = ["2026-01-15", "2026-01-31", "2026-02-15", "2026-02-28"]
+    provider = FakePriceProvider(
+        {
+            "AAA.NS": [(dates[0], 100.0), (dates[1], 110.0)],
+            "BBB.NS": [(dates[2], 100.0), (dates[3], 90.0)],
+            "^CRSLDX": list(zip(dates, [100.0, 110.0, 110.0, 121.0])),
+            "MONIFTY500.NS": list(zip(dates, [50.0, 54.0, 54.0, 59.4])),
+        },
+        volume_by_ticker={
+            "MONIFTY500.NS": list(zip(dates, [1000.0, 2000.0, 3000.0, 4000.0])),
+        },
+    )
+
+    result = run_competition(
+        prospective_db_path=db_path,
+        output_root=tmp_path / "out",
+        monthly_contribution=5000.0,
+        price_provider=provider,
+        today=pd.Timestamp("2026-03-05").date(),
+    )
+
+    nifty500_snapshots = [row for row in result.snapshots if row.strategy_id == "NIFTY500_V1"]
+    assert [row.monthly_return for row in nifty500_snapshots] == [0.1, 0.1]
+
+    summary = json.loads((tmp_path / "out" / "competition_summary.json").read_text(encoding="utf-8"))
+    representation = summary["nifty500_representation"]
+    assert representation["contestant_return_source"] == "benchmark_index"
+    assert representation["benchmark_index"]["ticker"] == "^CRSLDX"
+    assert representation["benchmark_index"]["investable"] is False
+    assert representation["benchmark_index"]["liquidity_applicable"] is False
+    assert "median_daily_volume" not in representation["benchmark_index"]
+    assert representation["execution_proxy"]["ticker"] == "MONIFTY500.NS"
+    assert representation["execution_proxy"]["liquidity_applicable"] is True
+    assert representation["execution_proxy"]["included_as_competition_contestant"] is False
+    assert representation["benchmark_index"]["history_observations"] == 4
+    assert representation["execution_proxy"]["history_observations"] == 4
+    assert representation["execution_proxy"]["volume_observations"] == 4
+    assert representation["execution_proxy"]["median_daily_volume"] == 2500.0
+    assert representation["monthly_comparisons"]["2026-01"] == {
+        "benchmark_index_return": 0.1,
+        "execution_proxy_return": 0.08,
+        "tracking_difference_pct_points": -2.0,
+    }
+    assert representation["annualized_daily_tracking_error_pct"] is not None

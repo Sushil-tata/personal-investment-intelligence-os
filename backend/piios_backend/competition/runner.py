@@ -46,33 +46,43 @@ class MarketPriceProvider:
     """Loads close series using the existing live-feeds yfinance retrieval path."""
 
     def __init__(self) -> None:
-        self._cache: dict[str, pd.Series] = {}
+        self._frame_cache: dict[str, pd.DataFrame] = {}
 
-    def close_series(self, ticker: str) -> pd.Series:
-        cached = self._cache.get(ticker)
+    def _market_frame(self, ticker: str) -> pd.DataFrame:
+        cached = self._frame_cache.get(ticker)
         if cached is not None:
             return cached
 
         snapshot = live_feeds.history(ticker, period="5y", interval="1d")
         if snapshot.frame is None or snapshot.frame.empty:
-            self._cache[ticker] = pd.Series(dtype=float)
-            return self._cache[ticker]
+            self._frame_cache[ticker] = pd.DataFrame()
+            return self._frame_cache[ticker]
 
-        frame = snapshot.frame.sort_index()
+        frame = snapshot.frame.sort_index().copy()
+        frame.index = _to_naive_date_index(frame.index)
+        frame = frame.groupby(frame.index).last().sort_index()
+        self._frame_cache[ticker] = frame
+        return frame
+
+    def close_series(self, ticker: str) -> pd.Series:
+        frame = self._market_frame(ticker)
+        if frame.empty:
+            return pd.Series(dtype=float)
         col = "Adj Close" if "Adj Close" in frame.columns else "Close"
         if col not in frame.columns:
-            self._cache[ticker] = pd.Series(dtype=float)
-            return self._cache[ticker]
+            return pd.Series(dtype=float)
 
         series = frame[col].dropna().astype(float)
         if series.empty:
-            self._cache[ticker] = pd.Series(dtype=float)
-            return self._cache[ticker]
+            return pd.Series(dtype=float)
 
-        series.index = _to_naive_date_index(series.index)
-        series = series.groupby(series.index).last().sort_index()
-        self._cache[ticker] = series
         return series
+
+    def volume_series(self, ticker: str) -> pd.Series:
+        frame = self._market_frame(ticker)
+        if frame.empty or "Volume" not in frame.columns:
+            return pd.Series(dtype=float)
+        return frame["Volume"].dropna().astype(float)
 
 
 def _price_return(provider: MarketPriceProvider, ticker: str, start_date: date, end_date: date) -> float | None:
@@ -128,6 +138,93 @@ def _cash_monthly_rate() -> float:
     return (1.0 + annual_rate) ** (1.0 / 12.0) - 1.0
 
 
+def _series_profile(
+    provider: MarketPriceProvider,
+    ticker: str,
+    end_date: date,
+    *,
+    include_liquidity: bool,
+) -> dict[str, object]:
+    close = provider.close_series(ticker)
+    if not close.empty:
+        close = close[close.index <= pd.Timestamp(end_date)]
+    profile: dict[str, object] = {
+        "history_observations": int(len(close)),
+        "history_start": None if close.empty else close.index[0].date().isoformat(),
+        "history_end": None if close.empty else close.index[-1].date().isoformat(),
+    }
+    if not include_liquidity:
+        return profile
+
+    volume_loader = getattr(provider, "volume_series", None)
+    volume = volume_loader(ticker) if callable(volume_loader) else pd.Series(dtype=float)
+    if not volume.empty:
+        volume = volume[volume.index <= pd.Timestamp(end_date)]
+    aligned = pd.concat([close.rename("close"), volume.rename("volume")], axis=1).dropna()
+    nonzero_volume = aligned[aligned["volume"] > 0.0]
+    profile["volume_observations"] = int(len(nonzero_volume))
+    profile["median_daily_volume"] = (
+        None if nonzero_volume.empty else round(float(nonzero_volume["volume"].median()), 6)
+    )
+    profile["median_daily_traded_value_inr"] = (
+        None
+        if nonzero_volume.empty
+        else round(float((nonzero_volume["close"] * nonzero_volume["volume"]).median()), 6)
+    )
+    return profile
+
+
+def _nifty500_representation_diagnostics(
+    provider: MarketPriceProvider,
+    *,
+    end_date: date,
+    monthly_comparisons: dict[str, dict[str, object]],
+) -> dict[str, object]:
+    index_ticker = "^CRSLDX"
+    proxy_ticker = "MONIFTY500.NS"
+    index_close = provider.close_series(index_ticker)
+    proxy_close = provider.close_series(proxy_ticker)
+    joined = pd.concat(
+        [index_close.rename("index"), proxy_close.rename("proxy")],
+        axis=1,
+    ).dropna()
+    if not joined.empty:
+        joined = joined[joined.index <= pd.Timestamp(end_date)]
+    daily_returns = joined.pct_change().dropna()
+    tracking_error = None
+    if not daily_returns.empty:
+        differences = daily_returns["proxy"] - daily_returns["index"]
+        tracking_error = round(float(differences.std(ddof=0) * (252.0 ** 0.5) * 100.0), 6)
+
+    return {
+        "contestant_return_source": "benchmark_index",
+        "benchmark_index": {
+            "name": "NIFTY 500",
+            "ticker": index_ticker,
+            "instrument_type": "INDEX",
+            "investable": False,
+            "liquidity_applicable": False,
+            **_series_profile(provider, index_ticker, end_date, include_liquidity=False),
+        },
+        "execution_proxy": {
+            "name": "Motilal Oswal Nifty 500 ETF",
+            "ticker": proxy_ticker,
+            "instrument_type": "ETF",
+            "investable": True,
+            "liquidity_applicable": True,
+            "included_as_competition_contestant": False,
+            **_series_profile(provider, proxy_ticker, end_date, include_liquidity=True),
+        },
+        "overlap_observations": int(len(joined)),
+        "annualized_daily_tracking_error_pct": tracking_error,
+        "monthly_comparisons": monthly_comparisons,
+        "interpretation": (
+            "NIFTY500_V1 performance uses the non-investable index. The ETF is reported only as an execution proxy; "
+            "its return, history, liquidity, and tracking difference are not collapsed into the index result."
+        ),
+    }
+
+
 def run_competition(
     *,
     prospective_db_path: Path,
@@ -154,6 +251,7 @@ def run_competition(
 
     benchmark_ticker = {
         "NIFTY50_V1": "NIFTYBEES.NS",
+        "NIFTY500_V1": "^CRSLDX",
         "SP500_V1": "SPY",
         "STI_V1": "ES3.SI",
     }
@@ -165,6 +263,7 @@ def run_competition(
     monthly_windows: dict[str, dict[str, str]] = {}
     monthly_core_components: dict[str, list[dict[str, object]]] = defaultdict(list)
     monthly_challenger_components: dict[str, dict[str, list[dict[str, object]]]] = defaultdict(dict)
+    nifty500_monthly_comparisons: dict[str, dict[str, object]] = {}
 
     for month in months:
         batch = [item for item in events_by_month[month] if hasattr(item, "payload")]
@@ -217,6 +316,17 @@ def run_competition(
         for strategy_id, ticker in benchmark_ticker.items():
             bench_ret = _price_return(price_provider, ticker, start_date, end_date)
             monthly_benchmark_returns[strategy_id][month] = 0.0 if bench_ret is None else bench_ret
+        nifty500_proxy_ret = _price_return(price_provider, "MONIFTY500.NS", start_date, end_date)
+        nifty500_index_ret = _price_return(price_provider, "^CRSLDX", start_date, end_date)
+        nifty500_monthly_comparisons[month] = {
+            "benchmark_index_return": None if nifty500_index_ret is None else round(nifty500_index_ret, 8),
+            "execution_proxy_return": None if nifty500_proxy_ret is None else round(nifty500_proxy_ret, 8),
+            "tracking_difference_pct_points": (
+                None
+                if nifty500_index_ret is None or nifty500_proxy_ret is None
+                else round((nifty500_proxy_ret - nifty500_index_ret) * 100.0, 6)
+            ),
+        }
         monthly_benchmark_returns["CASH_V1"][month] = cash_rate
 
     all_strategy_ids = [item.strategy_id for item in registry.all_latest()]
@@ -229,7 +339,7 @@ def run_competition(
     for month in months:
         for strategy_id in all_strategy_ids:
             contribution = equal_contribution_rule(strategy_id, monthly_contribution)
-            if strategy_id == "PIIOS_CORE":
+            if strategy_id == "PIIOS_CORE_V1":
                 monthly_return = monthly_core_returns.get(month, 0.0)
             elif strategy_id == "52W_HIGH_V1":
                 monthly_return = monthly_challenger_returns.get(strategy_id, {}).get(month, 0.0)
@@ -324,9 +434,10 @@ def run_competition(
                 "current_rank_1": current_rank_1,
                 "investment_conclusion": investment_conclusion,
                 "contestant_data_sources": {
-                    "PIIOS_CORE": "real weighted price return of held tickers via live_feeds.history(yfinance)",
+                    "PIIOS_CORE_V1": "real weighted price return of held tickers via live_feeds.history(yfinance); source ledger strategy_id remains PIIOS_CORE",
                     "52W_HIGH_V1": "real price return of monthly near-52-week-high basket selected from India universe via live_feeds.history(yfinance)",
                     "NIFTY50_V1": "real proxy price return via NIFTYBEES.NS from live_feeds.history(yfinance)",
+                    "NIFTY500_V1": "real NIFTY 500 benchmark index return via ^CRSLDX from live_feeds.history(yfinance); MONIFTY500.NS execution proxy reported separately",
                     "SP500_V1": "real proxy price return via SPY from live_feeds.history(yfinance)",
                     "STI_V1": "real proxy price return via ES3.SI from live_feeds.history(yfinance)",
                     "CASH_V1": "near-real cash proxy from documented annualized 4.0% converted to monthly rate",
@@ -334,6 +445,11 @@ def run_competition(
                 "monthly_windows": monthly_windows,
                 "piios_core_monthly_components": monthly_core_components,
                 "challenger_monthly_components": monthly_challenger_components,
+                "nifty500_representation": _nifty500_representation_diagnostics(
+                    price_provider,
+                    end_date=max(_parse_date(window["end_date"]) for window in monthly_windows.values()),
+                    monthly_comparisons=nifty500_monthly_comparisons,
+                ),
                 "leaderboard_top": asdict(leaderboard[0]) if leaderboard else None,
             },
             indent=2,

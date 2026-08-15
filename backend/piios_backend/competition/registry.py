@@ -43,7 +43,7 @@ def default_registry() -> StrategyRegistry:
     registry = StrategyRegistry()
     defaults: Iterable[StrategyDefinition] = [
         StrategyDefinition(
-            strategy_id="PIIOS_CORE",
+            strategy_id="PIIOS_CORE_V1",
             version=1,
             engine_version="WAVE_3_1_RECOMMENDATION_MVP",
             description="Prospective recommendation strategy with immutable decision ledger.",
@@ -61,6 +61,13 @@ def default_registry() -> StrategyRegistry:
             version=1,
             engine_version="INDEX_BENCHMARK",
             description="India large-cap passive benchmark.",
+            kind="BENCHMARK",
+        ),
+        StrategyDefinition(
+            strategy_id="NIFTY500_V1",
+            version=1,
+            engine_version="INDEX_BENCHMARK",
+            description="Broad India benchmark using the NIFTY 500 index series, with its investable proxy reported separately.",
             kind="BENCHMARK",
         ),
         StrategyDefinition(
