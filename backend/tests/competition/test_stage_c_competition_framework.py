@@ -9,7 +9,7 @@ import pandas as pd
 from piios_backend.competition.ledger_bridge import decisions_to_events, load_core_decisions
 from piios_backend.competition.models import APPLICATION_RETRIEVAL_TIMESTAMP, CoreDecision, StrategyDefinition
 from piios_backend.competition.registry import StrategyRegistry, default_registry
-from piios_backend.competition.runner import run_competition
+from piios_backend.competition.runner import _to_naive_date_index, run_competition
 from piios_backend.prospective_ledger.models import ProspectiveDecisionRecord
 from piios_backend.prospective_ledger.store import ProspectiveLedgerStore
 
@@ -38,6 +38,17 @@ class FakePriceProvider:
         idx = pd.to_datetime([d for d, _ in rows]).normalize()
         values = [float(v) for _, v in rows]
         return pd.Series(values, index=idx).sort_index()
+
+
+def test_to_naive_date_index_preserves_exchange_local_trading_date() -> None:
+    expected = pd.Timestamp("2026-08-14")
+
+    for timezone_name in ["Asia/Kolkata", "Asia/Singapore", "America/New_York"]:
+        raw_yahoo_index = pd.DatetimeIndex([pd.Timestamp("2026-08-14 00:00:00", tz=timezone_name)])
+        normalized = _to_naive_date_index(raw_yahoo_index)
+
+        assert normalized[0] == expected
+        assert normalized.tz is None
 
 
 def _seed_record(*, decision_id: str, as_of_date: str, ticker: str, allocation: float, run_timestamp: str) -> ProspectiveDecisionRecord:
@@ -330,6 +341,73 @@ def test_piios_core_weighted_real_return_matches_expected(tmp_path: Path) -> Non
     core = [x for x in snapshots if x["strategy_id"] == "PIIOS_CORE_V1" and x["as_of_date"].startswith("2026-01")][0]
     expected_return = ((1000.0 / 4000.0) * 0.1) + ((3000.0 / 4000.0) * -0.1)
     assert core["monthly_return"] == round(expected_return, 8)
+
+
+def test_monthly_data_coverage_distinguishes_real_zero_from_missing_default(tmp_path: Path) -> None:
+    db_path = tmp_path / "prospective.db"
+    store = ProspectiveLedgerStore(db_path)
+    store.init()
+    store.append(
+        [
+            _seed_record(
+                decision_id="d1",
+                as_of_date="2026-01-15",
+                ticker="AAA.NS",
+                allocation=1000.0,
+                run_timestamp="2026-01-15T10:00:00Z",
+            ),
+            _seed_record(
+                decision_id="d2",
+                as_of_date="2026-01-15",
+                ticker="MISSING.NS",
+                allocation=3000.0,
+                run_timestamp="2026-01-15T10:00:00Z",
+            ),
+        ]
+    )
+    provider = FakePriceProvider(
+        {
+            "AAA.NS": [("2026-01-15", 100.0), ("2026-01-31", 100.0)],
+            "NIFTYBEES.NS": [("2026-01-15", 200.0), ("2026-01-31", 200.0)],
+            "SPY": [("2026-01-15", 300.0), ("2026-01-31", 303.0)],
+        }
+    )
+
+    run_competition(
+        prospective_db_path=db_path,
+        output_root=tmp_path / "out",
+        monthly_contribution=5000.0,
+        price_provider=provider,
+        today=pd.Timestamp("2026-01-31").date(),
+    )
+
+    summary = json.loads((tmp_path / "out" / "competition_summary.json").read_text(encoding="utf-8"))
+    coverage = summary["monthly_data_coverage"]["2026-01"]
+    core = coverage["PIIOS_CORE_V1"]
+    assert core["reported_monthly_return"] == 0.0
+    assert core["priced_allocation_fraction"] == 0.25
+    assert core["defaulted_missing_allocation_fraction"] == 0.75
+    assert core["coverage_status"] == "PARTIALLY_DEFAULTED_MISSING"
+    assert {leg["ticker"]: leg["return_input_status"] for leg in core["legs"]} == {
+        "AAA.NS": "REAL_PRICE",
+        "MISSING.NS": "DEFAULTED_MISSING_PRICE_TO_ZERO",
+    }
+
+    nifty50 = coverage["NIFTY50_V1"]
+    assert nifty50["reported_monthly_return"] == 0.0
+    assert nifty50["priced_allocation_fraction"] == 1.0
+    assert nifty50["defaulted_missing_allocation_fraction"] == 0.0
+    assert nifty50["coverage_status"] == "FULLY_PRICED"
+
+    nifty500 = coverage["NIFTY500_V1"]
+    assert nifty500["reported_monthly_return"] == 0.0
+    assert nifty500["priced_allocation_fraction"] == 0.0
+    assert nifty500["defaulted_missing_allocation_fraction"] == 1.0
+    assert nifty500["coverage_status"] == "FULLY_DEFAULTED_MISSING"
+
+    leaderboard = json.loads((tmp_path / "out" / "competition_leaderboard.json").read_text(encoding="utf-8"))
+    core_row = next(row for row in leaderboard if row["strategy_id"] == "PIIOS_CORE_V1")
+    assert core_row["monthly_data_coverage"]["2026-01"] == core
 
 
 def test_default_registry_contains_required_contestants() -> None:

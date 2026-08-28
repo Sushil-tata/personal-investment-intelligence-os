@@ -38,7 +38,7 @@ def _month_end(target: date) -> date:
 def _to_naive_date_index(index: pd.Index) -> pd.DatetimeIndex:
     ts = pd.to_datetime(index)
     if getattr(ts, "tz", None) is not None:
-        ts = ts.tz_convert(None)
+        ts = ts.normalize().tz_localize(None)
     return ts.normalize()
 
 
@@ -117,18 +117,80 @@ def _weighted_event_return(
     allocations: dict[str, float],
     start_date: date,
     end_date: date,
-) -> float:
+) -> tuple[float, dict[str, object]]:
     total = sum(max(0.0, float(value)) for value in allocations.values())
     if total <= 0:
-        return 0.0
+        return 0.0, {
+            "reported_monthly_return": 0.0,
+            "priced_allocation_fraction": 0.0,
+            "defaulted_missing_allocation_fraction": 0.0,
+            "modeled_allocation_fraction": 0.0,
+            "coverage_status": "NO_ALLOCATION_LEGS",
+            "legs": [],
+        }
 
     weighted = 0.0
+    priced_weight = 0.0
+    defaulted_weight = 0.0
+    legs: list[dict[str, object]] = []
     for ticker, allocation in allocations.items():
         weight = max(0.0, float(allocation)) / total
         price_ret = _price_return(provider, ticker, start_date, end_date)
-        # If price is unavailable, keep that leg in cash (0.0 return) for this month.
-        weighted += weight * (0.0 if price_ret is None else price_ret)
-    return weighted
+        used_return = 0.0 if price_ret is None else price_ret
+        weighted += weight * used_return
+        if price_ret is None:
+            defaulted_weight += weight
+        else:
+            priced_weight += weight
+        legs.append(
+            {
+                "leg_id": ticker,
+                "ticker": ticker,
+                "allocation": round(float(allocation), 6),
+                "weight": round(weight, 8),
+                "price_return": None if price_ret is None else round(float(price_ret), 8),
+                "used_return": round(float(used_return), 8),
+                "return_input_status": (
+                    "DEFAULTED_MISSING_PRICE_TO_ZERO" if price_ret is None else "REAL_PRICE"
+                ),
+            }
+        )
+
+    if defaulted_weight <= 0.0:
+        coverage_status = "FULLY_PRICED"
+    elif priced_weight <= 0.0:
+        coverage_status = "FULLY_DEFAULTED_MISSING"
+    else:
+        coverage_status = "PARTIALLY_DEFAULTED_MISSING"
+    return weighted, {
+        "reported_monthly_return": round(weighted, 8),
+        "priced_allocation_fraction": round(priced_weight, 8),
+        "defaulted_missing_allocation_fraction": round(defaulted_weight, 8),
+        "modeled_allocation_fraction": 0.0,
+        "coverage_status": coverage_status,
+        "legs": legs,
+    }
+
+
+def _cash_return_coverage(monthly_return: float) -> dict[str, object]:
+    return {
+        "reported_monthly_return": round(monthly_return, 8),
+        "priced_allocation_fraction": 0.0,
+        "defaulted_missing_allocation_fraction": 0.0,
+        "modeled_allocation_fraction": 1.0,
+        "coverage_status": "MODELED_CASH_RETURN",
+        "legs": [
+            {
+                "leg_id": "CASH_RATE",
+                "ticker": None,
+                "allocation": 1.0,
+                "weight": 1.0,
+                "price_return": None,
+                "used_return": round(monthly_return, 8),
+                "return_input_status": "MODELED_CASH_RATE",
+            }
+        ],
+    }
 
 
 def _cash_monthly_rate() -> float:
@@ -263,6 +325,7 @@ def run_competition(
     monthly_windows: dict[str, dict[str, str]] = {}
     monthly_core_components: dict[str, list[dict[str, object]]] = defaultdict(list)
     monthly_challenger_components: dict[str, dict[str, list[dict[str, object]]]] = defaultdict(dict)
+    monthly_data_coverage: dict[str, dict[str, dict[str, object]]] = defaultdict(dict)
     nifty500_monthly_comparisons: dict[str, dict[str, object]] = {}
 
     for month in months:
@@ -286,36 +349,42 @@ def run_competition(
                 except Exception:
                     continue
 
-        month_total = sum(max(0.0, float(value)) for value in allocations.values())
-        for ticker, allocation in allocations.items():
-            normalized_weight = (max(0.0, float(allocation)) / month_total) if month_total > 0 else 0.0
-            ret = _price_return(price_provider, ticker, start_date, end_date)
-            monthly_core_components[month].append(
-                {
-                    "ticker": ticker,
-                    "proposed_allocation": round(float(allocation), 6),
-                    "weight": round(normalized_weight, 8),
-                    "price_return": None if ret is None else round(float(ret), 8),
-                }
-            )
-
-        monthly_core_returns[month] = _weighted_event_return(price_provider, allocations, start_date, end_date)
+        core_return, core_coverage = _weighted_event_return(price_provider, allocations, start_date, end_date)
+        monthly_core_returns[month] = core_return
+        monthly_data_coverage[month]["PIIOS_CORE_V1"] = core_coverage
+        monthly_core_components[month] = [
+            {
+                "ticker": leg["ticker"],
+                "proposed_allocation": leg["allocation"],
+                "weight": leg["weight"],
+                "price_return": leg["price_return"],
+            }
+            for leg in core_coverage["legs"]
+        ]
 
         challenger_allocations, challenger_components = select_52w_high_allocations(
             price_provider,
             as_of_date=start_date,
         )
         monthly_challenger_components[month]["52W_HIGH_V1"] = challenger_components
-        monthly_challenger_returns["52W_HIGH_V1"][month] = _weighted_event_return(
+        challenger_return, challenger_coverage = _weighted_event_return(
             price_provider,
             challenger_allocations,
             start_date,
             end_date,
         )
+        monthly_challenger_returns["52W_HIGH_V1"][month] = challenger_return
+        monthly_data_coverage[month]["52W_HIGH_V1"] = challenger_coverage
 
         for strategy_id, ticker in benchmark_ticker.items():
-            bench_ret = _price_return(price_provider, ticker, start_date, end_date)
-            monthly_benchmark_returns[strategy_id][month] = 0.0 if bench_ret is None else bench_ret
+            bench_ret, benchmark_coverage = _weighted_event_return(
+                price_provider,
+                {ticker: 1.0},
+                start_date,
+                end_date,
+            )
+            monthly_benchmark_returns[strategy_id][month] = bench_ret
+            monthly_data_coverage[month][strategy_id] = benchmark_coverage
         nifty500_proxy_ret = _price_return(price_provider, "MONIFTY500.NS", start_date, end_date)
         nifty500_index_ret = _price_return(price_provider, "^CRSLDX", start_date, end_date)
         nifty500_monthly_comparisons[month] = {
@@ -328,6 +397,7 @@ def run_competition(
             ),
         }
         monthly_benchmark_returns["CASH_V1"][month] = cash_rate
+        monthly_data_coverage[month]["CASH_V1"] = _cash_return_coverage(cash_rate)
 
     all_strategy_ids = [item.strategy_id for item in registry.all_latest()]
 
@@ -388,6 +458,14 @@ def run_competition(
         )
 
     leaderboard.sort(key=lambda row: row.ending_nav, reverse=True)
+    leaderboard_artifact = []
+    for row in leaderboard:
+        payload = asdict(row)
+        payload["monthly_data_coverage"] = {
+            month: monthly_data_coverage[month].get(row.strategy_id)
+            for month in months
+        }
+        leaderboard_artifact.append(payload)
 
     current_rank_1 = leaderboard[0].strategy_id if leaderboard else None
     investment_conclusion = (
@@ -413,7 +491,7 @@ def run_competition(
         json.dumps([asdict(item) for item in events], indent=2), encoding="utf-8"
     )
     (output_root / "competition_leaderboard.json").write_text(
-        json.dumps([asdict(item) for item in leaderboard], indent=2), encoding="utf-8"
+        json.dumps(leaderboard_artifact, indent=2), encoding="utf-8"
     )
     (output_root / "competition_monthly_snapshots.json").write_text(
         json.dumps([asdict(item) for item in snapshots], indent=2), encoding="utf-8"
@@ -443,6 +521,7 @@ def run_competition(
                     "CASH_V1": "near-real cash proxy from documented annualized 4.0% converted to monthly rate",
                 },
                 "monthly_windows": monthly_windows,
+                "monthly_data_coverage": monthly_data_coverage,
                 "piios_core_monthly_components": monthly_core_components,
                 "challenger_monthly_components": monthly_challenger_components,
                 "nifty500_representation": _nifty500_representation_diagnostics(
@@ -450,7 +529,7 @@ def run_competition(
                     end_date=max(_parse_date(window["end_date"]) for window in monthly_windows.values()),
                     monthly_comparisons=nifty500_monthly_comparisons,
                 ),
-                "leaderboard_top": asdict(leaderboard[0]) if leaderboard else None,
+                "leaderboard_top": leaderboard_artifact[0] if leaderboard_artifact else None,
             },
             indent=2,
         ),
