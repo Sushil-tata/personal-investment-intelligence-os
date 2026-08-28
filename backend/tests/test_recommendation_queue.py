@@ -55,7 +55,7 @@ def test_top_recommendations_respects_limit(monkeypatch) -> None:
     monkeypatch.setattr(
         live_feeds,
         "top_recommendations",
-        lambda limit=50, sector=None: [
+        lambda limit=50, sector=None, market=None: [
             row for row in sample if sector is None or row["sector"].lower() == sector.lower()
         ][:limit],
     )
@@ -74,7 +74,7 @@ def test_top_recommendations_filters_by_sector(monkeypatch) -> None:
     monkeypatch.setattr(
         live_feeds,
         "top_recommendations",
-        lambda limit=50, sector=None: [
+        lambda limit=50, sector=None, market=None: [
             row for row in sample if sector is None or row["sector"].lower() == sector.lower()
         ][:limit],
     )
