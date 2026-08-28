@@ -14,6 +14,7 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 runtime/*.json
+backend/runtime/
 backend/piios_backend/data/universe_validation.json
 
 node_modules/
