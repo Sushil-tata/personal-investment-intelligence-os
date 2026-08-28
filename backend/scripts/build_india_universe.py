@@ -3,24 +3,21 @@
 Usage:
     python backend/scripts/build_india_universe.py
 
-By default this script downloads NSE archival index constituent files, unions
-symbols, appends .NS, and writes backend/piios_backend/data/universe_india.txt.
+This script downloads the NSE NIFTY Total Market constituent file, appends .NS,
+and writes backend/piios_backend/data/universe_india.txt with source provenance.
 """
 
 from __future__ import annotations
 
 import csv
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.request import urlopen
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT_FILE = ROOT / "backend" / "piios_backend" / "data" / "universe_india.txt"
 
-NSE_INDEX_FILES = [
-    "ind_nifty500list.csv",
-    "ind_niftymidcap150list.csv",
-    "ind_niftysmallcap250list.csv",
-]
+NSE_INDEX_FILES = ["ind_niftytotalmarket_list.csv"]
 BASE_URL = "https://archives.nseindia.com/content/indices/"
 
 
@@ -53,7 +50,13 @@ def build() -> list[str]:
 
 def main() -> None:
     tickers = build()
-    OUT_FILE.write_text("\n".join(tickers) + "\n")
+    retrieved_at = datetime.now(timezone.utc).isoformat()
+    provenance = [
+        "# Universe: NIFTY Total Market constituents",
+        f"# Source: {BASE_URL}{NSE_INDEX_FILES[0]}",
+        f"# Retrieved: {retrieved_at}",
+    ]
+    OUT_FILE.write_text("\n".join(provenance + tickers) + "\n")
     print(f"wrote {len(tickers)} tickers to {OUT_FILE}")
 
 
