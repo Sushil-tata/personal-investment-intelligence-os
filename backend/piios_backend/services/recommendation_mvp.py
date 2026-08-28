@@ -124,7 +124,7 @@ _MARKET_TO_FILE = {
 	"India": "universe_india.txt",
 	"Singapore": "universe_singapore.txt",
 }
-_TICKER_ALLOWED = re.compile(r"^[A-Z0-9.-]+$")
+_TICKER_ALLOWED = re.compile(r"^[A-Z0-9.&-]+$")
 
 _MARKET_CAP_BUCKET_PERCENTILES = {
 	"large_min_pct": 80.0,
@@ -1832,7 +1832,7 @@ class RecommendationMVPService:
 		eligible_by_market: dict[str, int] = {}
 		partial_by_market: dict[str, int] = {}
 		ineligible_by_market: dict[str, int] = {}
-		validation_statuses = self._load_universe_validation_statuses()
+		validation_rows = self._load_universe_validation_rows()
 
 		for market in markets:
 			seed_tickers = self._load_universe_file(market)
@@ -1845,13 +1845,24 @@ class RecommendationMVPService:
 					invalid_count += 1
 					excluded.append({"market": market, "ticker": raw, "reason": "invalid_symbol", "missing_fields": ["ticker_format"]})
 					continue
-				status = validation_statuses.get((market, ticker))
+				validation = validation_rows.get((market, ticker))
+				status = validation.get("status") if validation else None
 				if status in {"INVALID", "STALE_DELISTED"}:
 					invalid_count += 1
 					excluded.append({"market": market, "ticker": ticker, "reason": f"universe_validation_{status.lower()}", "missing_fields": ["provider_history"]})
 					continue
 				if status == "PROVIDER_UNAVAILABLE":
 					provider_unavailable_count += 1
+					invalid_count += 1
+					excluded.append({"market": market, "ticker": ticker, "reason": "universe_validation_data_pending_provider", "missing_fields": ["provider_data"]})
+					continue
+				if validation and validation.get("eligible_for_screening") is False:
+					eligibility_status = str(validation.get("eligibility_status") or "INELIGIBLE")
+					if eligibility_status.startswith("DATA_PENDING"):
+						provider_unavailable_count += 1
+					invalid_count += 1
+					excluded.append({"market": market, "ticker": ticker, "reason": f"universe_validation_{eligibility_status.lower()}", "missing_fields": list(validation.get("missing_fields") or [])})
+					continue
 				currency = self._currency_for_ticker(ticker, market)
 				candidates.append(
 					CandidateInstrument(
@@ -1897,7 +1908,7 @@ class RecommendationMVPService:
 		}
 		return candidates, universe_summary, screening_summary, excluded
 
-	def _load_universe_validation_statuses(self) -> dict[tuple[str, str], str]:
+	def _load_universe_validation_rows(self) -> dict[tuple[str, str], dict[str, object]]:
 		path = _DATA_DIR / "universe_validation.json"
 		if not path.exists():
 			return {}
@@ -1908,7 +1919,7 @@ class RecommendationMVPService:
 		except Exception:
 			return {}
 
-		statuses: dict[tuple[str, str], str] = {}
+		statuses: dict[tuple[str, str], dict[str, object]] = {}
 		markets_payload = payload.get("markets") if isinstance(payload, dict) else None
 		if not isinstance(markets_payload, dict):
 			return statuses
@@ -1924,7 +1935,12 @@ class RecommendationMVPService:
 					ticker = self._sanitize_ticker(row.get("ticker"))
 					status = row.get("status")
 					if ticker and isinstance(status, str):
-						statuses[(str(market), ticker)] = status
+						statuses[(str(market), ticker)] = {
+							"status": status,
+							"eligible_for_screening": row.get("eligible_for_screening", status == "VALID"),
+							"eligibility_status": row.get("eligibility_status"),
+							"missing_fields": row.get("missing_fields") or [],
+						}
 			# New validator format.
 			for key in ["valid_preview", "invalid_preview", "stale_delisted_preview", "provider_unavailable_preview"]:
 				rows = details.get(key)
@@ -1936,7 +1952,12 @@ class RecommendationMVPService:
 					ticker = self._sanitize_ticker(row.get("ticker"))
 					status = row.get("status")
 					if ticker and isinstance(status, str):
-						statuses[(str(market), ticker)] = status
+						statuses[(str(market), ticker)] = {
+							"status": status,
+							"eligible_for_screening": row.get("eligible_for_screening", status == "VALID"),
+							"eligibility_status": row.get("eligibility_status"),
+							"missing_fields": row.get("missing_fields") or [],
+						}
 
 			# Legacy validator format.
 			for bucket, status in (("validated_preview", "VALID"), ("invalid_preview", "STALE_DELISTED")):
@@ -1948,7 +1969,12 @@ class RecommendationMVPService:
 						continue
 					ticker = self._sanitize_ticker(row.get("ticker"))
 					if ticker:
-						statuses[(str(market), ticker)] = status
+						statuses[(str(market), ticker)] = {
+							"status": status,
+							"eligible_for_screening": status == "VALID",
+							"eligibility_status": None,
+							"missing_fields": [],
+						}
 
 		return statuses
 
